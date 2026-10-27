@@ -7,6 +7,7 @@ Project-specific rules. They add to the global engineering principles and overri
 - Project type: web app with a few separate accounts, self-hosted on the owner's VPS at matrix.example.com (ADR 0003, #71; runbook in `docs/hosting.md`). The claude.ai artifact version was retired on 2026-10-27 (#80); its build still works.
 - Tier: tool
 - Repo: https://github.com/coldlight-labs/priority-matrix (public, MIT; the earlier private repo is archived)
+- `main` is protected: changes go through pull requests, and the CI job "checks" must pass on an up-to-date branch (#5). Issue numbers below #84 in older docs refer to the archived private repo.
 - Board: the owner's private GitHub project board
 
 ## Stack and commands
