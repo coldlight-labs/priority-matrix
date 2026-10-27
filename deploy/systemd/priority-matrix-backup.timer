@@ -1,0 +1,12 @@
+# Runs the backup every night (step 5, #77). Persistent: a run missed while the VPS was
+# off happens at the next boot. Installed and enabled by deploy/update.sh.
+[Unit]
+Description=Nightly Priority Matrix data backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+# Keep the Docker build small and free of local data and secrets.
+node_modules
+dist
+dist-site
+dist-server
+.dev-data
+coverage
+.git
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets
+.claude

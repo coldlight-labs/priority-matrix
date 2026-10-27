@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="claude:viewport-fit-sides" content="cover" />
+    <title>Priority Matrix</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    />
+  </head>
+  <body>
+    <div class="page">
+      <header class="masthead">
+        <h1>Priority Matrix</h1>
+        <div class="masthead-side">
+          <p id="storage-mode" class="storage-mode"></p>
+          <div id="theme"></div>
+        </div>
+      </header>
+      <p id="status" class="status" role="status" hidden></p>
+      <main id="app-main">
+        <section class="panel capture-panel" aria-label="Add a task">
+          <div id="capture"></div>
+        </section>
+        <div id="tabs"></div>
+        <div id="board-view" class="view">
+          <div id="today"></div>
+          <div id="next-up"></div>
+          <section aria-label="Matrix">
+            <div id="matrix"></div>
+          </section>
+          <section class="board" aria-label="Tasks by quadrant">
+            <div id="tasks"></div>
+          </section>
+        </div>
+        <section id="ideas-view" class="view panel shelf-panel" hidden>
+          <h2>Ideas</h2>
+          <div id="ideas"></div>
+        </section>
+        <section id="graveyard-view" class="view panel shelf-panel" hidden>
+          <h2>Graveyard</h2>
+          <div id="graveyard"></div>
+        </section>
+        <details class="panel labels-panel">
+          <summary><h2>Labels</h2></summary>
+          <div id="labels"></div>
+        </details>
+        <div id="export"></div>
+      </main>
+    </div>
+    <script type="module" src="./src/app/main.ts"></script>
+  </body>
+</html>

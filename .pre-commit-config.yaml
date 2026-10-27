@@ -1,0 +1,64 @@
+# Node/TypeScript project. The generic hooks come from the engineering-standards template;
+# the stack hooks at the bottom run the project's own pinned tools from node_modules (run npm ci first).
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # Blocks commits on main. Work happens on branches; main changes only via pull requests.
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+
+  # Secret scanning. If this hook fails to install, install gitleaks yourself
+  # (e.g. brew install gitleaks) and change the id to: gitleaks-system
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: prettier
+        name: format (prettier)
+        entry: npx --no-install prettier --check .
+        language: system
+        pass_filenames: false
+        types_or: [ts, javascript, json, html, yaml, css]
+
+      - id: eslint
+        name: lint (eslint)
+        entry: npx --no-install eslint --max-warnings 0 .
+        language: system
+        pass_filenames: false
+        types_or: [ts, javascript]
+
+      - id: tsc
+        name: types (tsc strict)
+        entry: npx --no-install tsc --noEmit
+        language: system
+        pass_filenames: false
+        types_or: [ts, javascript, json]
+
+      # Import rules: module boundaries and "dependencies point inward". Blocking.
+      # Rules live in .dependency-cruiser.cjs; test/import-rules.test.ts proves they fire.
+      - id: import-rules
+        name: import rules (dependency-cruiser)
+        entry: npx --no-install depcruise src server --config .dependency-cruiser.cjs
+        language: system
+        pass_filenames: false
+        types_or: [ts, javascript]
+
+      # Personal details (#74): words from the git-ignored .private-words file, or the
+      # PRIVATE_WORDS secret in CI. Blocking; prints file names and counts only.
+      - id: private-words
+        name: personal details (private words)
+        entry: bash tools/check-private-words.sh
+        language: system
+        pass_filenames: false
+        always_run: true

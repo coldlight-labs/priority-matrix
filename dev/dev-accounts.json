@@ -1,0 +1,13 @@
+{
+  "note": "Made-up keys for local testing only (npm run dev:server). They never go on the VPS; dev/make-dev-data.ts writes them to the git-ignored .dev-data folder.",
+  "accounts": [
+    {
+      "name": "dev-a",
+      "key": "LOCALTESTONLYAnotASecretNeverOnTheServer000"
+    },
+    {
+      "name": "dev-b",
+      "key": "LOCALTESTONLYBnotASecretNeverOnTheServer000"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Node
+node_modules/
+dist/
+dist-server/
+dist-site/
+.dev-data/
+coverage/
+*.tsbuildinfo
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local AI tool settings (personal, not shared)
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Personal words for tools/check-private-words.sh (#74), never committed
+.private-words
+
+# Playwright browser tool output (screenshots, recordings), local only
+.playwright-mcp/

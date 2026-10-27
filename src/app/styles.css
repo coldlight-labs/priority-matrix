@@ -1,0 +1,1184 @@
+/* Layout: a working desk. Capture bar on top, the 2x2 urgency/importance grid
+   (stacks to one column on phones), labels in a drawer below. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --ink: #1b2230;
+  --muted: #5d6676;
+  --line: #d9dee6;
+  --accent: #1f5f7a;
+  --accent-ink: #ffffff;
+  --danger: #b42318;
+  --win: #1a7f4b;
+  --q-do: #c2410c;
+  --q-schedule: #2259a0;
+  --q-delegate: #9a6a08;
+  --q-drop: #6b7280;
+  /* Bright fills for the matrix tint only (#45, option B). Text keeps the --q-* colors,
+     which hold 4.5:1; these do not, so they never color text. Same in both themes. */
+  --quad-fill-do: #f05a14;
+  --quad-fill-schedule: #2f6fe0;
+  --quad-fill-delegate: #d99a00;
+  --quad-fill-drop: #7a8699;
+  --quad-tint: 0.28;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d;
+    --surface: #1a2029;
+    --ink: #e6e9ef;
+    --muted: #9aa3b2;
+    --line: #2c3442;
+    --accent: #6cb4d1;
+    --accent-ink: #0d1218;
+    --danger: #f2877b;
+    --win: #5fd08f;
+    --q-do: #f08a55;
+    --q-schedule: #7aa8e6;
+    --q-delegate: #e0b44f;
+    --q-drop: #9aa3b2;
+    --quad-tint: 0.28;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #12161d;
+  --surface: #1a2029;
+  --ink: #e6e9ef;
+  --muted: #9aa3b2;
+  --line: #2c3442;
+  --accent: #6cb4d1;
+  --accent-ink: #0d1218;
+  --danger: #f2877b;
+  --win: #5fd08f;
+  --q-do: #f08a55;
+  --q-schedule: #7aa8e6;
+  --q-delegate: #e0b44f;
+  --q-drop: #9aa3b2;
+  --quad-tint: 0.28;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 var(--font-body);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 16px;
+}
+
+main {
+  display: grid;
+  gap: 16px;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.masthead-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.theme-toggle {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.storage-mode {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.storage-mode.warning {
+  flex-basis: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--danger);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.status {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+/* Form controls */
+input[type="text"],
+input[type="date"],
+input[type="time"],
+select {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+}
+
+input:disabled {
+  opacity: 0.5;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+button[type="submit"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field-error {
+  margin: 4px 0 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* Capture: text, date, time and follow-up on the first row; importance, label
+   and the button on the second. */
+.capture {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(
+      0,
+      1.3fr
+    );
+  gap: 12px 16px;
+  align-items: start;
+}
+
+.capture-field-follow-up {
+  align-self: end;
+}
+
+.capture-field-label {
+  grid-column: span 2;
+}
+
+/* The follow-up tickbox reads as a sentence, not as a field caption. */
+.follow-up {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.follow-up label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.capture-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.capture-actions {
+  display: grid;
+  gap: 6px;
+  align-self: end;
+  min-width: 0;
+}
+
+.capture-actions button {
+  margin-bottom: 1px;
+  padding-block: 9px;
+}
+
+/* "Just an idea" reads as a sentence, like the follow-up tickbox (#42). */
+.capture-idea {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.capture-idea label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.score-value {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .capture {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .capture-field-text,
+  .capture-field-follow-up,
+  .capture-field-label,
+  .capture-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Quadrant board: urgency and importance both at or above 50 = Do now */
+.quadrants {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .quadrants {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.quadrant {
+  --q: var(--q-drop);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--q);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.quadrant[data-quadrant="DO"] {
+  --q: var(--q-do);
+}
+.quadrant[data-quadrant="SCHEDULE"] {
+  --q: var(--q-schedule);
+}
+.quadrant[data-quadrant="DELEGATE"] {
+  --q: var(--q-delegate);
+}
+
+.quadrant header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 0 8px;
+  margin-bottom: 8px;
+}
+
+.quadrant h2 {
+  color: var(--q);
+}
+
+.quadrant .count {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.quadrant .rule {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Matrix: SVG grid of open tasks */
+.matrix {
+  position: relative;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.matrix svg {
+  /* A long press opens the dot menu (#46), not the phone's text callout. */
+  -webkit-touch-callout: none;
+  user-select: none;
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  justify-self: center;
+  font-family: var(--font-body);
+}
+
+/* Vivid quadrants (#45, option B): bright fills at a 28% tint, names in the quadrant
+   color. Dots keep their contrast through the outline below. */
+.matrix .quad {
+  fill: var(--qf);
+  fill-opacity: var(--quad-tint);
+}
+
+.matrix .quad-do,
+.matrix .quad-name-do {
+  --q: var(--q-do);
+  --qf: var(--quad-fill-do);
+}
+.matrix .quad-schedule,
+.matrix .quad-name-schedule {
+  --q: var(--q-schedule);
+  --qf: var(--quad-fill-schedule);
+}
+.matrix .quad-delegate,
+.matrix .quad-name-delegate {
+  --q: var(--q-delegate);
+  --qf: var(--quad-fill-delegate);
+}
+.matrix .quad-drop,
+.matrix .quad-name-drop {
+  --q: var(--q-drop);
+  --qf: var(--quad-fill-drop);
+}
+
+.matrix .quad-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  /* 30% of the text color keeps the names above 4.5:1 on the tint in both themes
+     (checked in test/core/palette.test.ts). */
+  fill: color-mix(in srgb, var(--q) 70%, var(--ink));
+}
+
+.matrix .mid-line,
+.matrix .frame {
+  stroke: var(--line);
+  stroke-width: 1;
+  fill: none;
+}
+
+.matrix .mid-line {
+  stroke: var(--muted);
+  stroke-opacity: 0.6;
+}
+
+.matrix .axis-title {
+  font-size: 12px;
+  fill: var(--muted);
+}
+
+.matrix .dot {
+  cursor: pointer;
+}
+
+.matrix .dot .mark {
+  stroke: var(--surface);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+}
+
+.matrix .dot .ring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+
+.matrix .dot:focus-visible {
+  outline: none;
+}
+
+/* The tapped dot: larger (radius set in code) with an outline in the text color. */
+.matrix .dot.selected .mark {
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+
+.matrix .dot:focus-visible .mark {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.matrix-caption {
+  min-height: 1.5em;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.matrix-caption.has-card {
+  text-align: left;
+}
+
+/* Card for the tapped dot (Q34: A): a bar in the label color, then the details. */
+.caption-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border-left: 5px solid var(--line);
+  border-radius: 0;
+}
+
+.caption-card p {
+  margin: 0;
+}
+
+.caption-title {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.caption-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* Label name in the caption (i84): large text (at least 18.66px semibold) so its
+   palette color only needs 3:1. Falls back to the text color with no label. */
+.caption-label {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.matrix-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 16px;
+  font-size: 0.85rem;
+}
+
+.matrix-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.task {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.task:first-child {
+  border-top: 0;
+}
+
+.task-text {
+  overflow-wrap: anywhere;
+}
+
+.task .task-edit {
+  grid-column: 2;
+  justify-self: start;
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.task.editing {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.task-edit-form {
+  display: grid;
+  gap: 8px;
+}
+
+.task-edit-form .slider label {
+  min-width: 7.5em;
+}
+
+.task-edit-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.task-edit-dates input[type="date"],
+.task-edit-dates input[type="time"] {
+  width: auto;
+}
+
+.task-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.task-meta {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.task-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.next-up {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--q-do);
+  border-radius: 0;
+  padding: 12px 16px;
+}
+
+.next-up h2 {
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--q-do);
+  margin-bottom: 4px;
+}
+
+.next-up .task-text {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+
+.task-scores {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-date {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Follow-up dates are a soft target, so they read as a tag (i42). */
+.task-date.follow-up {
+  padding: 0 6px;
+  border: 1px dashed var(--muted);
+  border-radius: 999px;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 6px 0;
+}
+
+.done-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.done-toggle label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.9rem;
+}
+
+.done-list {
+  margin-top: 8px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.done-list .task-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+/* Labels drawer */
+.labels-panel summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.labels-panel summary h2 {
+  display: inline;
+}
+
+#labels {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.label-new {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.label-new input {
+  flex: 1 1 200px;
+  width: auto;
+}
+
+.label-new .field-error {
+  flex-basis: 100%;
+}
+
+.label-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.label-row:first-child {
+  border-top: 0;
+}
+
+.label-row input {
+  flex: 1 1 180px;
+  width: auto;
+}
+
+.label-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* Legend sample for striped follow-up dots, matching the matrix pattern. */
+.color-dot.mark {
+  border-radius: 0;
+}
+
+.color-dot.mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.color-dot.striped {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--muted) 0 2.4px,
+    #ffffff 2.4px 4px
+  );
+}
+
+.color-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.color-button .color-dot {
+  width: 16px;
+  height: 16px;
+}
+
+.color-picker {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+
+.swatch {
+  aspect-ratio: 1;
+  max-width: 100%;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: 6px;
+}
+
+.swatch .color-dot {
+  width: 18px;
+  height: 18px;
+}
+
+.swatch[aria-pressed="true"] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--surface);
+}
+
+.label-confirm {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.label-row .field-error {
+  flex-basis: 100%;
+}
+
+.label-archived summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.label-archived ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+}
+
+.label-archived .label-name {
+  color: var(--muted);
+}
+
+/* Export CSV and Full backup (#40) */
+.export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.export button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.export-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Row actions: the Today star and Edit (#38). */
+.task-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task .task-star {
+  padding: 2px 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.task .task-star.picked {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* "Mark as done? Yes, done / Cancel" in a ticked row (i72). */
+.confirm-done {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-weight: 600;
+}
+
+.confirm-done button {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+}
+
+.confirm-done .confirm-yes {
+  background: var(--win);
+  border-color: var(--win);
+  color: var(--surface);
+}
+
+/* Today card (#38): picks for today above Next up. */
+.today-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 0;
+  padding: 12px 16px;
+}
+
+.today-card.all-done {
+  border-left-color: var(--win);
+}
+
+.today-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.today-card h2 {
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.today-progress {
+  margin: 0;
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.today-message {
+  margin: 4px 0;
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.today-cheer {
+  position: relative;
+  margin: 4px 0 8px;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--win);
+}
+
+.today-card .task.is-done .task-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.burst {
+  position: absolute;
+  left: 1.5em;
+  top: 50%;
+  pointer-events: none;
+}
+
+.burst-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px;
+  border-radius: 50%;
+  background: var(--win);
+  opacity: 0;
+}
+
+/* Motion only for viewers who have not asked to reduce it; the text change stays. */
+@media (prefers-reduced-motion: no-preference) {
+  .today-card .just-done input:checked {
+    animation: check-pop 0.45s ease-out;
+  }
+
+  .burst-dot {
+    animation: burst-out 0.9s ease-out;
+  }
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.6);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes burst-out {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--angle)) translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--angle)) translateX(56px);
+  }
+}
+
+/* Tabs (#42): Board, Ideas, Graveyard. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 14px;
+  margin-bottom: -1px;
+}
+
+.tab[aria-selected="true"] {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.view:not([hidden]) {
+  display: grid;
+  gap: 16px;
+}
+
+.shelf-panel h2 {
+  margin-bottom: 4px;
+}
+
+/* Shelf rows have no done box, so text, meta and buttons share one column. */
+.task.shelf-task {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shelf-task .task-meta,
+.shelf-task .task-actions {
+  grid-column: 1;
+}
+
+.shelf-task .task-actions button,
+.task .task-drop {
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.shelf-note,
+.list-notice {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.shelf-note:empty {
+  display: none;
+}
+
+/* Delete for good (#54): red, and asked about in the row before anything is deleted. */
+.shelf-task .shelf-delete {
+  color: var(--danger);
+}
+
+.shelf-confirm {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-weight: 600;
+}
+
+.shelf-confirm button {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+}
+
+.shelf-confirm .confirm-delete {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--surface);
+}
+
+/* Dot menu (#46): a popup beside the dot, placed by dot-menu.ts. */
+.dot-menu {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  min-width: 11rem;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+
+.dot-menu button {
+  justify-self: stretch;
+  text-align: left;
+}
+
+.dot-menu p {
+  margin: 4px 6px;
+  font-weight: 600;
+}
+
+.dot-menu .dot-menu-drop {
+  color: var(--danger);
+}
+
+/* Crowded-spot list (#50): the label mark, then the task text. */
+.dot-menu .chooser-title {
+  margin: 2px 6px 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dot-menu .chooser-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}

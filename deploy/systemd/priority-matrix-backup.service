@@ -1,0 +1,10 @@
+# Nightly data backup (step 5, #77). Installed and refreshed by deploy/update.sh;
+# started by priority-matrix-backup.timer. Logs: journalctl -u priority-matrix-backup
+[Unit]
+Description=Priority Matrix data backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/priority-matrix/deploy/backup.sh

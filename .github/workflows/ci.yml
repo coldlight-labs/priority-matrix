@@ -1,0 +1,54 @@
+# The job is named "checks": github-setup.sh makes it a required check on main,
+# so keep the name or update the branch protection to match.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege for the workflow token.
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the secret scan sees every commit
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install pre-commit
+
+      - name: Hooks (format, lint, types, import rules, secrets, personal details)
+        # no-commit-to-branch is for local commits only, so it is skipped in CI.
+        run: SKIP=no-commit-to-branch pre-commit run --all-files --show-diff-on-failure
+        env:
+          # Words for the personal-details check (#74); the check is skipped if unset.
+          PRIVATE_WORDS: ${{ secrets.PRIVATE_WORDS }}
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Dependency audit (known vulnerabilities)
+        run: npm audit --audit-level=low
+
+# Deploy jobs added later must authenticate to the cloud with OIDC
+# (permissions: id-token: write) instead of stored long-lived keys.

@@ -1,0 +1,38 @@
+# The app on its own subdomain (ADR 0003, #66, #71). Caddy gets and renews the HTTPS
+# certificates itself. SITE_ADDRESS (the app) and MAIN_ADDRESS (the main domain) come
+# from deploy/.env through compose.yaml; a local test uses .localhost names.
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	header {
+		# HTTPS only, for a year, once the site has been reached over HTTPS.
+		Strict-Transport-Security "max-age=31536000"
+		# Only this site's own files, plus Google Fonts for the typefaces.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	handle /api/* {
+		request_body {
+			max_size 64KB
+		}
+		reverse_proxy server:8080
+	}
+
+	handle {
+		root * /srv
+		file_server
+	}
+}
+
+# The main domain is kept for other sites (#71). Until one exists, send visitors to the
+# app. Temporary (302), so browsers do not remember it once the main domain has its own
+# site. Browsers keep the "#key=" part of an old link through the redirect.
+{$MAIN_ADDRESS}, www.{$MAIN_ADDRESS} {
+	redir https://{$SITE_ADDRESS}{uri} 302
+}

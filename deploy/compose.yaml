@@ -1,0 +1,66 @@
+# The app on the VPS (ADR 0003, #66, #71). Run from the repo root:
+#   sudo docker compose -f deploy/compose.yaml up -d --build
+# The site addresses come from deploy/.env on the VPS (git-ignored; see
+# deploy/.env.example), so no real address is kept in the repo (#74).
+# Only Caddy (web) is reachable from the internet; the server only from Caddy.
+
+name: priority-matrix
+
+x-logs: &logs
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # The app's own address (#71); the main domain stays free for other sites.
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in deploy/.env}
+      # The main domain and its www, sent to the app for now (temporary redirect).
+      MAIN_ADDRESS: ${MAIN_ADDRESS:?set MAIN_ADDRESS in deploy/.env}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - server
+    <<: *logs
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: server
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DATA_DIR: /data
+      BASE_URL: https://${SITE_ADDRESS:?set SITE_ADDRESS in deploy/.env}
+      BEHIND_PROXY: "true"
+    volumes:
+      - app-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    <<: *logs
+
+volumes:
+  # Tasks and accounts. Kept across updates; backed up in step 5.
+  app-data:
+  # Caddy's certificates.
+  caddy-data:
+  caddy-config:
