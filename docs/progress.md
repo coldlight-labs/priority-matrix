@@ -1,10 +1,10 @@
 # Progress
 
 ## Current state
-- Working on: the public repo coldlight-labs/priority-matrix (fresh history, MIT). Work continues here; the earlier private repo is archived.
-- Next: testers (Q114); the go-public card (license, fresh repo, likely under a GitHub organization); the encryption idea #78.
+- Working on: nothing open. Self-hosting steps 1 to 5 are done; the app is live and the repo is public.
+- Next (optional): encryption idea (issue on the old board, #78 there); review 6 options A (remove the claude.ai build) and C (uptime alert).
 - Parked: adjustable quadrant line (i1), AI scoring. Discarded: multiple tags (i6).
-- Last labels used: Q121, i167
+- Last labels used: Q123, i169
 
 ## Log
 ### 2026-10-22
@@ -152,3 +152,7 @@
 - Q120: b. The owner's GitHub account pushes to the public repo; its username shows on pushes and pull requests there. Q121: MIT license, copyright Coldlight Labs.
 - i167 accepted: the public repo coldlight-labs/priority-matrix is the working repo from now on. It starts from one fresh commit (no earlier history, so the owner's email and name in old commits stay private). The earlier private repo is to be archived; the VPS switches to the public repo over HTTPS (runbook "Switching to the public repo").
 - Checks run on the snapshot before publishing: private words, email addresses, IP addresses, local paths, usernames, secret scan, private files, image metadata, full npm run check.
+- Done: the public repo is published (one commit, author Coldlight Labs, MIT). The owner set PRIVATE_WORDS on it, switched the VPS to pull from it over HTTPS, ran update.sh and removed the old deploy key. The old private repo is archived (Q122: a); this folder's old history stays as the local branch private-main.
+- Issue and pull request numbers before this point (#1 to #83 in this log) refer to the archived private repo. From here on they refer to coldlight-labs/priority-matrix, which started again at #1.
+- Done: Q123: a. Dependabot updates #1 to #4 merged: Node 24.22.1 and Caddy 2.11.7 base images (deployed by the owner with update.sh), actions/setup-node, checkout and setup-python v7. #3 and #4 were merged by the owner in the browser: the local GitHub login lacks the "workflow" permission that changes to .github/workflows need.
+- Done: i169, branch protection on main (#5): pull requests only, the CI job "checks" must pass on an up-to-date branch, admins included, no force pushes or deletions.
