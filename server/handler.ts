@@ -67,12 +67,13 @@ interface Route {
   readonly method: string;
   readonly pattern: RegExp;
   readonly name: string;
-  readonly access: "read" | "write";
+  readonly access: "read" | "full-write" | "task-write";
   readonly run: (
     accountId: string,
     id: string,
     body: unknown,
     search: URLSearchParams,
+    credentialAccess: "full" | "read-only" | "task-writer",
   ) => Promise<ApiResponse>;
 }
 
@@ -112,7 +113,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "PUT",
       pattern: /^\/api\/tasks\/([A-Za-z0-9-]{1,100})$/,
       name: "PUT /api/tasks/:id",
-      access: "write",
+      access: "full-write",
       run: async (accountId, id, body) => {
         const t = checkTask(body, id);
         if (t === undefined) return error(400, "invalid");
@@ -130,10 +131,33 @@ export function createHandler(deps: HandlerDeps) {
     },
     {
       method: "POST",
+      pattern: /^\/api\/tasks\/([A-Za-z0-9-]{1,100})\/create-if-absent$/,
+      name: "POST /api/tasks/:id/create-if-absent",
+      access: "task-write",
+      run: async (accountId, id, body) => {
+        const t = checkTask(body, id);
+        if (t === undefined) return error(400, "invalid");
+        return store.update(accountId, (data) => {
+          if (id in data.tasks) {
+            return { changed: false, value: error(409, "conflict") };
+          }
+          if (Object.keys(data.tasks).length >= MAX_TASKS) {
+            return { changed: false, value: error(413, "too_many") };
+          }
+          if (!hasActiveLabel(data, t.labelId)) {
+            return { changed: false, value: error(400, "invalid") };
+          }
+          data.tasks[id] = t;
+          return { changed: true, value: { status: 200, json: { ok: true } } };
+        });
+      },
+    },
+    {
+      method: "POST",
       pattern: /^\/api\/tasks\/([A-Za-z0-9-]{1,100})\/save-if-unchanged$/,
       name: "POST /api/tasks/:id/save-if-unchanged",
-      access: "write",
-      run: async (accountId, id, body) => {
+      access: "task-write",
+      run: async (accountId, id, body, _search, credentialAccess) => {
         if (!isRecord(body)) return error(400, "invalid");
         const loaded = checkTask(body.loaded, id);
         const updated = checkTask(body.updated, id);
@@ -141,6 +165,19 @@ export function createHandler(deps: HandlerDeps) {
           return error(400, "invalid");
         }
         return store.update(accountId, (data) => {
+          if (credentialAccess === "task-writer") {
+            // A writer may update an existing task only; creation has its own
+            // create-if-absent route so a guessed id can never become an upsert.
+            if (storedTask(data, id) === undefined) {
+              return { changed: false, value: error(409, "conflict") };
+            }
+            if (
+              updated.labelId !== loaded.labelId &&
+              !hasActiveLabel(data, updated.labelId)
+            ) {
+              return { changed: false, value: error(400, "invalid") };
+            }
+          }
           if (changedSince(loaded, storedTask(data, id))) {
             return { changed: false, value: error(409, "conflict") };
           }
@@ -159,7 +196,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "POST",
       pattern: /^\/api\/tasks\/([A-Za-z0-9-]{1,100})\/delete-if-unchanged$/,
       name: "POST /api/tasks/:id/delete-if-unchanged",
-      access: "write",
+      access: "full-write",
       run: async (accountId, id, body) => {
         if (!isRecord(body)) return error(400, "invalid");
         const loaded = checkTask(body.loaded, id);
@@ -184,7 +221,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "PUT",
       pattern: /^\/api\/labels\/([A-Za-z0-9-]{1,100})$/,
       name: "PUT /api/labels/:id",
-      access: "write",
+      access: "full-write",
       run: async (accountId, id, body) => {
         const l = checkLabel(body, id);
         if (l === undefined) return error(400, "invalid");
@@ -204,7 +241,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "POST",
       pattern: /^\/api\/labels\/([A-Za-z0-9-]{1,100})\/save-if-name-free$/,
       name: "POST /api/labels/:id/save-if-name-free",
-      access: "write",
+      access: "full-write",
       run: async (accountId, id, body) => {
         if (!isRecord(body)) return error(400, "invalid");
         const l = checkLabel(body.label, id);
@@ -279,7 +316,13 @@ export function createHandler(deps: HandlerDeps) {
       const route = matches.find((r) => r.method === request.method);
       if (route === undefined) return finish(error(405, "method_not_allowed"));
       routeName = route.name;
-      if (credential.access === "read-only" && route.access !== "read") {
+      const allowed =
+        route.access === "read"
+          ? credential.access !== "task-writer"
+          : route.access === "task-write"
+            ? credential.access !== "read-only"
+            : credential.access === "full";
+      if (!allowed) {
         return finish(error(403, "forbidden"));
       }
 
@@ -302,6 +345,7 @@ export function createHandler(deps: HandlerDeps) {
           id,
           body,
           new URLSearchParams(request.search),
+          credential.access,
         ),
       );
     } catch {
@@ -332,6 +376,12 @@ function checkLabel(doc: unknown, id: string): Label | undefined {
 function storedTask(data: AccountData, id: string): Task | undefined {
   const parsed = parseStoredTask(data.tasks[id]);
   return parsed.ok ? parsed.value : undefined;
+}
+
+/** A task may be created or relabeled only to a valid, active label. */
+function hasActiveLabel(data: AccountData, id: string): boolean {
+  const parsed = parseStoredLabel(data.labels[id]);
+  return parsed.ok && !parsed.value.archived;
 }
 
 function parsedTasks(data: AccountData): { items: Task[]; skipped: number } {

@@ -152,3 +152,9 @@
 - Q120: b. The owner's GitHub account pushes to the public repo; its username shows on pushes and pull requests there. Q121: MIT license, copyright Coldlight Labs.
 - i167 accepted: the public repo coldlight-labs/priority-matrix is the working repo from now on. It starts from one fresh commit (no earlier history, so the owner's email and name in old commits stay private). The earlier private repo is to be archived; the VPS switches to the public repo over HTTPS (runbook "Switching to the public repo").
 - Checks run on the snapshot before publishing: private words, email addresses, IP addresses, local paths, usernames, secret scan, private files, image metadata, full npm run check.
+
+## 2026-10-28 (task-writer API, #9)
+- Started #9 on branch `9-task-writer-api-key` in the public repository. The scoped key can create unused task ids and checked-update existing tasks; it cannot read data, write labels, upsert tasks, administer accounts or permanently delete tasks. Keys are independently revocable and only their hashes are stored.
+- Verified locally: format, lint, types, import rules, 618 tests (including a local HTTP server), and all three builds pass. Existing Vite config-loader warnings remain.
+- Privacy: manually reviewed the change for personal details; the personal-word scan could not run because this environment has neither its local word list nor the CI secret. Run it in the authorized repo environment before publishing. The code adds no dependencies.
+- No client key was created or configured, and no VPS deployment has been performed. Push requires the owner's approval.

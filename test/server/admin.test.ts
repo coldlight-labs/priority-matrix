@@ -3,6 +3,7 @@ import {
   emptyAccounts,
   findAccount,
   findCredential,
+  hashKey,
   type AccountsFile,
 } from "../../server/accounts";
 import { runAdmin } from "../../server/admin";
@@ -110,5 +111,24 @@ describe("account command (#62)", () => {
     expect((await run("revoke-read-only-key", "owner", keyId)).code).toBe(0);
     expect(await findCredential(file(), readOnlyKey)).toBeUndefined();
     expect((await findCredential(file(), fullKey))?.access).toBe("full");
+  });
+
+  it("creates and revokes a task-writer key, showing its secret once", async () => {
+    const { run, file } = setup();
+    await run("create", "owner", "--empty");
+    const output = await run("create-task-writer-key", "owner");
+    const keyId = /^Key id: ([0-9a-f]{32})$/m.exec(output.text)?.[1] ?? "";
+    const key = /^Key: ([A-Za-z0-9_-]{43})$/m.exec(output.text)?.[1] ?? "";
+    expect(output.code).toBe(0);
+    expect(keyId).toMatch(/^[0-9a-f]{32}$/);
+    expect(key).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(JSON.stringify(file())).not.toContain(key);
+    expect(await findCredential(file(), key)).toMatchObject({
+      account: { name: "owner" },
+      access: "task-writer",
+    });
+    expect((await run("revoke-task-writer-key", "owner", keyId)).code).toBe(0);
+    expect(await findCredential(file(), key)).toBeUndefined();
+    expect(await hashKey(key)).not.toBe(file().accounts[0]?.keyHash);
   });
 });
