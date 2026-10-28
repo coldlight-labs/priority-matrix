@@ -160,6 +160,20 @@ sudo docker compose -f /opt/priority-matrix/deploy/compose.yaml exec server node
 ```
 The browser's existing full-access link remains unchanged. Revoking a read-only key does not revoke that link or affect task data.
 
+## Scoped task-writer API access (#9)
+
+A task-writer key can create a task only when its id is unused, or update an existing task only when the submitted loaded copy still matches the server's copy. Creation and relabeling require an active label. The key cannot retrieve account data, write labels, use the upsert endpoint, administer accounts, or permanently delete tasks. Dropping a task to the reversible Graveyard status uses the checked update route. Read access remains a separate read-only key.
+
+On the VPS, run the account command inside the server container as an administrator:
+```bash
+sudo docker compose -f /opt/priority-matrix/deploy/compose.yaml exec server node cli.js create-task-writer-key <account-name>
+```
+The command prints a key id and secret once. Store the secret in an approved secrets manager and provide it to the client through that manager's secure mechanism; never paste it into chat, a note, shell history, or a repository. Keep the id (not the secret) for revocation:
+```bash
+sudo docker compose -f /opt/priority-matrix/deploy/compose.yaml exec server node cli.js revoke-task-writer-key <account-name> <key-id>
+```
+The existing read-only key remains the read path. This API capability does not create a key or configure a client by itself.
+
 ## Switching to the public repo (once)
 The code moved to the public repo `coldlight-labs/priority-matrix`, with a fresh history. Point the VPS at it and pull it once:
 ```bash

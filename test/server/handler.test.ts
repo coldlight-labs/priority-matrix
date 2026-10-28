@@ -3,12 +3,15 @@ import type { Label, Task } from "../../src/core";
 import {
   createAccount,
   createReadOnlyKey,
+  createTaskWriterKey,
   emptyAccounts,
   hashKey,
   newAccountId,
   newKey,
   newReadOnlyKeyId,
+  newTaskWriterKeyId,
   revokeReadOnlyKey,
+  revokeTaskWriterKey,
   revokeAccount,
   type AccountsFile,
 } from "../../server/accounts";
@@ -134,6 +137,20 @@ async function setup(limit = 1000) {
     keys[`read-only-${name}`] = key;
     return id;
   };
+  const addTaskWriterKey = async (name: string) => {
+    const key = newKey();
+    const id = newTaskWriterKeyId();
+    const added = createTaskWriterKey(accounts, {
+      name,
+      id,
+      keyHash: await hashKey(key),
+      now: NOW,
+    });
+    if (!added.ok) throw new Error("add task-writer key");
+    accounts = added.value;
+    keys[`task-writer-${name}`] = key;
+    return id;
+  };
   const revokeReadOnly = (name: string, id: string) => {
     const revoked = revokeReadOnlyKey(accounts, name, id, NOW);
     if (!revoked.ok) throw new Error("revoke read-only key");
@@ -143,7 +160,13 @@ async function setup(limit = 1000) {
     call,
     logs,
     addReadOnlyKey,
+    addTaskWriterKey,
     revokeReadOnly,
+    revokeTaskWriter: (name: string, id: string) => {
+      const revoked = revokeTaskWriterKey(accounts, name, id, NOW);
+      if (!revoked.ok) throw new Error("revoke task-writer key");
+      accounts = revoked.value;
+    },
     revoke: (name: string) => {
       const r = revokeAccount(accounts, name, NOW);
       if (!r.ok) throw new Error("revoke");
@@ -213,6 +236,7 @@ describe("read-only keys (#7)", () => {
         { loaded: task("t1"), updated: task("t1", { text: "Changed" }) },
       ],
       ["POST", "/api/tasks/t1/delete-if-unchanged", { loaded: task("t1") }],
+      ["POST", "/api/tasks/t1/create-if-absent", task("t1")],
       ["PUT", "/api/labels/l1", label("l1", "Work")],
       [
         "POST",
@@ -238,6 +262,241 @@ describe("read-only keys (#7)", () => {
     expect((await call("read-only-owner", "GET", "/api/data")).status).toBe(
       401,
     );
+  });
+});
+
+describe("task-writer keys (#9)", () => {
+  it("creates only unused tasks and refuses an existing id without overwriting it", async () => {
+    const { call, addTaskWriterKey } = await setup();
+    await addTaskWriterKey("owner");
+    await call("owner", "PUT", "/api/labels/l1", label("l1", "Work"));
+    const created = await call(
+      "task-writer-owner",
+      "POST",
+      "/api/tasks/t1/create-if-absent",
+      task("t1"),
+    );
+    expect(created.status).toBe(200);
+    const collision = await call(
+      "task-writer-owner",
+      "POST",
+      "/api/tasks/t1/create-if-absent",
+      task("t1", { text: "Overwrite attempt" }),
+    );
+    expect(collision.status).toBe(409);
+    expect((await call("owner", "GET", "/api/data")).json).toMatchObject({
+      tasks: [task("t1")],
+    });
+  });
+
+  it("creates an undated idea and can edit its task fields", async () => {
+    const { call, addTaskWriterKey } = await setup();
+    await addTaskWriterKey("owner");
+    await call("owner", "PUT", "/api/labels/l1", label("l1", "Work"));
+    await call("owner", "PUT", "/api/labels/l2", label("l2", "Personal"));
+
+    const idea = task("t1", { status: "idea" });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/create-if-absent",
+          idea,
+        )
+      ).status,
+    ).toBe(200);
+
+    const planned = task("t1", {
+      importance: 85,
+      labelId: "l2",
+      date: "2026-11-05",
+      time: "14:30",
+      followUp: true,
+      status: "open",
+      updatedAt: T1,
+    });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/save-if-unchanged",
+          {
+            loaded: idea,
+            updated: planned,
+          },
+        )
+      ).status,
+    ).toBe(200);
+    expect((await call("owner", "GET", "/api/data")).json).toMatchObject({
+      tasks: [planned],
+    });
+  });
+
+  it("performs checked updates and a reversible Graveyard move", async () => {
+    const { call, addTaskWriterKey } = await setup();
+    await addTaskWriterKey("owner");
+    await call("owner", "PUT", "/api/labels/l1", label("l1", "Work"));
+    await call("owner", "PUT", "/api/tasks/t1", task("t1"));
+    const updated = task("t1", { text: "Updated action", updatedAt: T1 });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/save-if-unchanged",
+          {
+            loaded: task("t1"),
+            updated,
+          },
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/save-if-unchanged",
+          {
+            loaded: task("t1"),
+            updated: task("t1", { text: "Stale edit", updatedAt: T1 }),
+          },
+        )
+      ).status,
+    ).toBe(409);
+    const dropped = task("t1", {
+      text: "Updated action",
+      status: "dropped",
+      updatedAt: "2026-10-27T09:00:00.000Z",
+    });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/save-if-unchanged",
+          {
+            loaded: updated,
+            updated: dropped,
+          },
+        )
+      ).status,
+    ).toBe(200);
+    expect((await call("owner", "GET", "/api/data")).json).toMatchObject({
+      tasks: [{ id: "t1", status: "dropped" }],
+    });
+  });
+
+  it("cannot read data, write labels, use upsert, or permanently delete tasks", async () => {
+    const { call, addTaskWriterKey } = await setup();
+    await addTaskWriterKey("owner");
+    await call("owner", "PUT", "/api/labels/l1", label("l1", "Work"));
+    await call("owner", "PUT", "/api/tasks/t1", task("t1"));
+    expect((await call("task-writer-owner", "GET", "/api/data")).status).toBe(
+      403,
+    );
+    expect(
+      (await call("task-writer-owner", "PUT", "/api/tasks/t1", task("t1")))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "PUT",
+          "/api/labels/l1",
+          label("l1", "Changed"),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/delete-if-unchanged",
+          { loaded: task("t1") },
+        )
+      ).status,
+    ).toBe(403);
+    expect((await call("owner", "GET", "/api/data")).json).toMatchObject({
+      tasks: [task("t1")],
+      labels: [label("l1", "Work")],
+    });
+  });
+
+  it("cannot create with an archived label or use an update as a create", async () => {
+    const { call, addTaskWriterKey } = await setup();
+    await addTaskWriterKey("owner");
+    await call(
+      "owner",
+      "PUT",
+      "/api/labels/l1",
+      label("l1", "Old", { archived: true }),
+    );
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/create-if-absent",
+          task("t1"),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/save-if-unchanged",
+          {
+            loaded: task("t1"),
+            updated: task("t1", { text: "Create through update" }),
+          },
+        )
+      ).status,
+    ).toBe(409);
+  });
+
+  it("stays within its account and stops working after revocation", async () => {
+    const { call, addTaskWriterKey, revokeTaskWriter } = await setup();
+    const id = await addTaskWriterKey("owner");
+    const testerWriterId = await addTaskWriterKey("tester");
+    await call("owner", "PUT", "/api/labels/l1", label("l1", "Work"));
+    await call("owner", "PUT", "/api/tasks/t1", task("t1"));
+    await call("tester", "PUT", "/api/labels/l1", label("l1", "Work"));
+    await call("tester", "PUT", "/api/tasks/t1", task("t1"));
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/save-if-unchanged",
+          {
+            loaded: task("t1"),
+            updated: task("t1", { text: "Owner changed", updatedAt: T1 }),
+          },
+        )
+      ).status,
+    ).toBe(200);
+    expect((await call("tester", "GET", "/api/data")).json).toMatchObject({
+      tasks: [task("t1")],
+    });
+    revokeTaskWriter("owner", id);
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/create-if-absent",
+          task("t2"),
+        )
+      ).status,
+    ).toBe(401);
+    revokeTaskWriter("tester", testerWriterId);
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createAccount,
   createReadOnlyKey,
+  createTaskWriterKey,
   emptyAccounts,
   findAccount,
   findCredential,
@@ -9,9 +10,11 @@ import {
   newAccountId,
   newKey,
   newReadOnlyKeyId,
+  newTaskWriterKeyId,
   parseAccountsFile,
   revokeAccount,
   revokeReadOnlyKey,
+  revokeTaskWriterKey,
   sameHash,
 } from "../../server/accounts";
 
@@ -65,6 +68,58 @@ describe("finding an account by key (#62)", () => {
     const revoked = revokeAccount(file, "tester-a", NOW);
     if (!revoked.ok) throw new Error("revoke");
     expect(await findAccount(revoked.value, key)).toBeUndefined();
+  });
+});
+
+describe("task-writer keys (#9)", () => {
+  it("stores only the hash and finds the account with task-write access", async () => {
+    const { file } = await withAccount("owner");
+    const key = newKey();
+    const id = newTaskWriterKeyId();
+    const added = createTaskWriterKey(file, {
+      name: "owner",
+      id,
+      keyHash: await hashKey(key),
+      now: NOW,
+    });
+    if (!added.ok) throw new Error("create task-writer key");
+    expect(id).toMatch(/^[0-9a-f]{32}$/);
+    expect(JSON.stringify(added.value)).not.toContain(key);
+    expect(added.value.accounts[0]?.taskWriterKeys?.[0]?.keyHash).toMatch(
+      /^[0-9a-f]{64}$/,
+    );
+    expect(await findCredential(added.value, key)).toMatchObject({
+      account: { name: "owner" },
+      access: "task-writer",
+    });
+  });
+
+  it("revokes one key idempotently without affecting other account keys", async () => {
+    const { key: accountKey, file } = await withAccount("owner");
+    const writerKey = newKey();
+    const id = newTaskWriterKeyId();
+    const added = createTaskWriterKey(file, {
+      name: "owner",
+      id,
+      keyHash: await hashKey(writerKey),
+      now: NOW,
+    });
+    if (!added.ok) throw new Error("create task-writer key");
+    const revoked = revokeTaskWriterKey(added.value, "owner", id, NOW);
+    if (!revoked.ok) throw new Error("revoke task-writer key");
+    expect(await findCredential(revoked.value, writerKey)).toBeUndefined();
+    expect((await findCredential(revoked.value, accountKey))?.access).toBe(
+      "full",
+    );
+    expect(revokeTaskWriterKey(revoked.value, "owner", id, NOW)).toEqual({
+      ok: true,
+      value: revoked.value,
+    });
+  });
+
+  it("keeps legacy account records valid without either scoped-key list", async () => {
+    const { file } = await withAccount("owner");
+    expect(parseAccountsFile(JSON.parse(JSON.stringify(file)))).toEqual(file);
   });
 });
 

@@ -10,6 +10,7 @@ export interface Account {
   readonly name: string;
   readonly keyHash: string;
   readonly readOnlyKeys?: readonly ReadOnlyKey[];
+  readonly taskWriterKeys?: readonly TaskWriterKey[];
   readonly createdAt: string;
   readonly revokedAt: string | null;
 }
@@ -22,9 +23,17 @@ export interface ReadOnlyKey {
   readonly revokedAt: string | null;
 }
 
+/** A separately revocable bearer key that can create and checked-update tasks only. */
+export interface TaskWriterKey {
+  readonly id: string;
+  readonly keyHash: string;
+  readonly createdAt: string;
+  readonly revokedAt: string | null;
+}
+
 export interface AccountCredential {
   readonly account: Account;
-  readonly access: "full" | "read-only";
+  readonly access: "full" | "read-only" | "task-writer";
 }
 
 /** The accounts file, `accounts.json` in the data folder. */
@@ -60,6 +69,11 @@ export function newAccountId(): string {
 
 /** A new identifier for a read-only key, as 32 lowercase hexadecimal characters. */
 export function newReadOnlyKeyId(): string {
+  return hex(crypto.getRandomValues(new Uint8Array(ID_BYTES)));
+}
+
+/** A new identifier for a task-writer key, as 32 lowercase hexadecimal characters. */
+export function newTaskWriterKeyId(): string {
   return hex(crypto.getRandomValues(new Uint8Array(ID_BYTES)));
 }
 
@@ -105,8 +119,105 @@ export async function findCredential(
         found = { account, access: "read-only" };
       }
     }
+    for (const taskWriterKey of account.taskWriterKeys ?? []) {
+      if (
+        taskWriterKey.revokedAt === null &&
+        sameHash(taskWriterKey.keyHash, hash)
+      ) {
+        found = { account, access: "task-writer" };
+      }
+    }
   }
   return found;
+}
+
+/** Adds a separately revocable task-writer key to an active account. */
+export function createTaskWriterKey(
+  file: AccountsFile,
+  input: { name: string; id: string; keyHash: string; now: Date },
+): Result<AccountsFile> {
+  const account = file.accounts.find(
+    (candidate) =>
+      candidate.name === input.name && candidate.revokedAt === null,
+  );
+  if (account === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "name", message: "No active account has this name." }],
+    };
+  }
+  const taskWriterKeys = account.taskWriterKeys ?? [];
+  if (taskWriterKeys.some((candidate) => candidate.id === input.id)) {
+    return {
+      ok: false,
+      errors: [{ field: "id", message: "Refused." }],
+    };
+  }
+  const updatedAccount: Account = {
+    ...account,
+    taskWriterKeys: [
+      ...taskWriterKeys,
+      {
+        id: input.id,
+        keyHash: input.keyHash,
+        createdAt: input.now.toISOString(),
+        revokedAt: null,
+      },
+    ],
+  };
+  return {
+    ok: true,
+    value: {
+      ...file,
+      accounts: file.accounts.map((candidate) =>
+        candidate.id === account.id ? updatedAccount : candidate,
+      ),
+    },
+  };
+}
+
+/** Revokes one task-writer key. Repeating a successful revoke is harmless. */
+export function revokeTaskWriterKey(
+  file: AccountsFile,
+  name: string,
+  keyId: string,
+  now: Date,
+): Result<AccountsFile> {
+  const account = file.accounts.find(
+    (candidate) => candidate.name === name && candidate.revokedAt === null,
+  );
+  if (account === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "name", message: "No active account has this name." }],
+    };
+  }
+  const keys = account.taskWriterKeys ?? [];
+  const key = keys.find((candidate) => candidate.id === keyId);
+  if (key === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "keyId", message: "No task-writer key has this id." }],
+    };
+  }
+  if (key.revokedAt !== null) return { ok: true, value: file };
+  const updatedAccount: Account = {
+    ...account,
+    taskWriterKeys: keys.map((candidate) =>
+      candidate.id === keyId
+        ? { ...candidate, revokedAt: now.toISOString() }
+        : candidate,
+    ),
+  };
+  return {
+    ok: true,
+    value: {
+      ...file,
+      accounts: file.accounts.map((candidate) =>
+        candidate.id === account.id ? updatedAccount : candidate,
+      ),
+    },
+  };
 }
 
 /** The active account for any of its keys, or undefined. */
@@ -286,16 +397,46 @@ export function parseAccountsFile(doc: unknown): AccountsFile {
       throw new Error("Accounts file has a malformed account.");
     }
     const readOnlyKeys = parseReadOnlyKeys(a.readOnlyKeys);
+    const taskWriterKeys = parseTaskWriterKeys(a.taskWriterKeys);
     return {
       id: a.id,
       name: a.name,
       keyHash: a.keyHash,
       ...(readOnlyKeys === undefined ? {} : { readOnlyKeys }),
+      ...(taskWriterKeys === undefined ? {} : { taskWriterKeys }),
       createdAt: a.createdAt,
       revokedAt: a.revokedAt,
     };
   });
   return { version: 1, accounts };
+}
+
+function parseTaskWriterKeys(
+  value: unknown,
+): readonly TaskWriterKey[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error("Accounts file has malformed task-writer keys.");
+  }
+  return value.map((key: unknown): TaskWriterKey => {
+    if (
+      !isRecord(key) ||
+      typeof key.id !== "string" ||
+      !ID_PATTERN.test(key.id) ||
+      typeof key.keyHash !== "string" ||
+      !HASH_PATTERN.test(key.keyHash) ||
+      typeof key.createdAt !== "string" ||
+      !(key.revokedAt === null || typeof key.revokedAt === "string")
+    ) {
+      throw new Error("Accounts file has a malformed task-writer key.");
+    }
+    return {
+      id: key.id,
+      keyHash: key.keyHash,
+      createdAt: key.createdAt,
+      revokedAt: key.revokedAt,
+    };
+  });
 }
 
 function parseReadOnlyKeys(value: unknown): readonly ReadOnlyKey[] | undefined {
