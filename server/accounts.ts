@@ -11,6 +11,7 @@ export interface Account {
   readonly keyHash: string;
   readonly readOnlyKeys?: readonly ReadOnlyKey[];
   readonly taskWriterKeys?: readonly TaskWriterKey[];
+  readonly labelWriterKeys?: readonly LabelWriterKey[];
   readonly createdAt: string;
   readonly revokedAt: string | null;
 }
@@ -31,9 +32,17 @@ export interface TaskWriterKey {
   readonly revokedAt: string | null;
 }
 
+/** A separately revocable bearer key that can create labels only. */
+export interface LabelWriterKey {
+  readonly id: string;
+  readonly keyHash: string;
+  readonly createdAt: string;
+  readonly revokedAt: string | null;
+}
+
 export interface AccountCredential {
   readonly account: Account;
-  readonly access: "full" | "read-only" | "task-writer";
+  readonly access: "full" | "read-only" | "task-writer" | "label-writer";
 }
 
 /** The accounts file, `accounts.json` in the data folder. */
@@ -74,6 +83,11 @@ export function newReadOnlyKeyId(): string {
 
 /** A new identifier for a task-writer key, as 32 lowercase hexadecimal characters. */
 export function newTaskWriterKeyId(): string {
+  return hex(crypto.getRandomValues(new Uint8Array(ID_BYTES)));
+}
+
+/** A new identifier for a label-writer key, as 32 lowercase hexadecimal characters. */
+export function newLabelWriterKeyId(): string {
   return hex(crypto.getRandomValues(new Uint8Array(ID_BYTES)));
 }
 
@@ -127,8 +141,102 @@ export async function findCredential(
         found = { account, access: "task-writer" };
       }
     }
+    for (const labelWriterKey of account.labelWriterKeys ?? []) {
+      if (
+        labelWriterKey.revokedAt === null &&
+        sameHash(labelWriterKey.keyHash, hash)
+      ) {
+        found = { account, access: "label-writer" };
+      }
+    }
   }
   return found;
+}
+
+/** Adds a separately revocable label-writer key to an active account. */
+export function createLabelWriterKey(
+  file: AccountsFile,
+  input: { name: string; id: string; keyHash: string; now: Date },
+): Result<AccountsFile> {
+  const account = file.accounts.find(
+    (candidate) =>
+      candidate.name === input.name && candidate.revokedAt === null,
+  );
+  if (account === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "name", message: "No active account has this name." }],
+    };
+  }
+  const labelWriterKeys = account.labelWriterKeys ?? [];
+  if (labelWriterKeys.some((candidate) => candidate.id === input.id)) {
+    return { ok: false, errors: [{ field: "id", message: "Refused." }] };
+  }
+  const updatedAccount: Account = {
+    ...account,
+    labelWriterKeys: [
+      ...labelWriterKeys,
+      {
+        id: input.id,
+        keyHash: input.keyHash,
+        createdAt: input.now.toISOString(),
+        revokedAt: null,
+      },
+    ],
+  };
+  return {
+    ok: true,
+    value: {
+      ...file,
+      accounts: file.accounts.map((candidate) =>
+        candidate.id === account.id ? updatedAccount : candidate,
+      ),
+    },
+  };
+}
+
+/** Revokes one label-writer key. Repeating a successful revoke is harmless. */
+export function revokeLabelWriterKey(
+  file: AccountsFile,
+  name: string,
+  keyId: string,
+  now: Date,
+): Result<AccountsFile> {
+  const account = file.accounts.find(
+    (candidate) => candidate.name === name && candidate.revokedAt === null,
+  );
+  if (account === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "name", message: "No active account has this name." }],
+    };
+  }
+  const keys = account.labelWriterKeys ?? [];
+  const key = keys.find((candidate) => candidate.id === keyId);
+  if (key === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "keyId", message: "No label-writer key has this id." }],
+    };
+  }
+  if (key.revokedAt !== null) return { ok: true, value: file };
+  const updatedAccount: Account = {
+    ...account,
+    labelWriterKeys: keys.map((candidate) =>
+      candidate.id === keyId
+        ? { ...candidate, revokedAt: now.toISOString() }
+        : candidate,
+    ),
+  };
+  return {
+    ok: true,
+    value: {
+      ...file,
+      accounts: file.accounts.map((candidate) =>
+        candidate.id === account.id ? updatedAccount : candidate,
+      ),
+    },
+  };
 }
 
 /** Adds a separately revocable task-writer key to an active account. */
@@ -398,17 +506,47 @@ export function parseAccountsFile(doc: unknown): AccountsFile {
     }
     const readOnlyKeys = parseReadOnlyKeys(a.readOnlyKeys);
     const taskWriterKeys = parseTaskWriterKeys(a.taskWriterKeys);
+    const labelWriterKeys = parseLabelWriterKeys(a.labelWriterKeys);
     return {
       id: a.id,
       name: a.name,
       keyHash: a.keyHash,
       ...(readOnlyKeys === undefined ? {} : { readOnlyKeys }),
       ...(taskWriterKeys === undefined ? {} : { taskWriterKeys }),
+      ...(labelWriterKeys === undefined ? {} : { labelWriterKeys }),
       createdAt: a.createdAt,
       revokedAt: a.revokedAt,
     };
   });
   return { version: 1, accounts };
+}
+
+function parseLabelWriterKeys(
+  value: unknown,
+): readonly LabelWriterKey[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error("Accounts file has malformed label-writer keys.");
+  }
+  return value.map((key: unknown): LabelWriterKey => {
+    if (
+      !isRecord(key) ||
+      typeof key.id !== "string" ||
+      !ID_PATTERN.test(key.id) ||
+      typeof key.keyHash !== "string" ||
+      !HASH_PATTERN.test(key.keyHash) ||
+      typeof key.createdAt !== "string" ||
+      !(key.revokedAt === null || typeof key.revokedAt === "string")
+    ) {
+      throw new Error("Accounts file has a malformed label-writer key.");
+    }
+    return {
+      id: key.id,
+      keyHash: key.keyHash,
+      createdAt: key.createdAt,
+      revokedAt: key.revokedAt,
+    };
+  });
 }
 
 function parseTaskWriterKeys(

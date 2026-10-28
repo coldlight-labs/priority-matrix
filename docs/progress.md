@@ -1,12 +1,20 @@
 # Progress
 
 ## Current state
-- Working on: the public repo coldlight-labs/priority-matrix (fresh history, MIT). Work continues here; the earlier private repo is archived.
-- Next: testers (Q114); the go-public card (license, fresh repo, likely under a GitHub organization); the encryption idea #78.
-- Parked: adjustable quadrant line (i1), AI scoring. Discarded: multiple tags (i6).
+- Working on: #11 create-only label-writer API role (branch `11-label-writer-api`) in the public repo `coldlight-labs/priority-matrix`.
+- Status: API role, atomic create route, CLI key creation/revocation, focused tests, ADR, hosting guide, and architecture updates are implemented locally. No key was generated and no deployment occurred.
+- Next step: the paired Hermes issue #13 implementation is complete locally. Review both repositories, then request approval before pushing either branch.
+- Architecture impact: structural; adds a credential role and an API route. The trust boundary and ADR 0006 are documented in this change.
 - Last labels used: Q121, i167
 
 ## Log
+### 2026-10-29
+- Started: #11, public issue “Add a create-only label-writer credential and endpoint,” branch `11-label-writer-api`.
+- Implemented: a separately revocable, optional `labelWriterKeys` account field; explicit role-to-route authorization; create-only `/api/labels/:id/create-if-name-free`; server-side label-name, uniqueness, id, limit, and default-color rules; and CLI creation/revocation commands.
+- Verified: the complete Matrix check passes (format, lint, type check, imports, 626 tests, and all three builds). Its built-in private-words step skipped without a list, then a separate scan using the user's local list passed. No matching private markers were found.
+- Risk: an older server cannot use the new role; rollback to older account-management code may discard its optional key metadata. Existing account data and other credentials remain compatible.
+- Not done: no key generated, no live Matrix data changed, no deployment, and no PR push.
+
 ### 2026-10-22
 - Done: MVP plan agreed (Q1: a; i1, i2, i4, i5, i6 accepted; i3 changed to labels managed in the app; export button added).
 - Discovered: the artifact runtime is not available locally, so the plan uses an in-memory adapter for dev and tests.
