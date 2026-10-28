@@ -4,14 +4,17 @@ import {
   createAccount,
   createReadOnlyKey,
   createTaskWriterKey,
+  createLabelWriterKey,
   emptyAccounts,
   hashKey,
   newAccountId,
   newKey,
   newReadOnlyKeyId,
   newTaskWriterKeyId,
+  newLabelWriterKeyId,
   revokeReadOnlyKey,
   revokeTaskWriterKey,
+  revokeLabelWriterKey,
   revokeAccount,
   type AccountsFile,
 } from "../../server/accounts";
@@ -151,6 +154,20 @@ async function setup(limit = 1000) {
     keys[`task-writer-${name}`] = key;
     return id;
   };
+  const addLabelWriterKey = async (name: string) => {
+    const key = newKey();
+    const id = newLabelWriterKeyId();
+    const added = createLabelWriterKey(accounts, {
+      name,
+      id,
+      keyHash: await hashKey(key),
+      now: NOW,
+    });
+    if (!added.ok) throw new Error("add label-writer key");
+    accounts = added.value;
+    keys[`label-writer-${name}`] = key;
+    return id;
+  };
   const revokeReadOnly = (name: string, id: string) => {
     const revoked = revokeReadOnlyKey(accounts, name, id, NOW);
     if (!revoked.ok) throw new Error("revoke read-only key");
@@ -161,10 +178,16 @@ async function setup(limit = 1000) {
     logs,
     addReadOnlyKey,
     addTaskWriterKey,
+    addLabelWriterKey,
     revokeReadOnly,
     revokeTaskWriter: (name: string, id: string) => {
       const revoked = revokeTaskWriterKey(accounts, name, id, NOW);
       if (!revoked.ok) throw new Error("revoke task-writer key");
+      accounts = revoked.value;
+    },
+    revokeLabelWriter: (name: string, id: string) => {
+      const revoked = revokeLabelWriterKey(accounts, name, id, NOW);
+      if (!revoked.ok) throw new Error("revoke label-writer key");
       accounts = revoked.value;
     },
     revoke: (name: string) => {
@@ -689,6 +712,219 @@ describe("label names (#62)", () => {
       },
     );
     expect(res.json).toMatchObject({ ok: true });
+  });
+});
+
+describe("label-writer keys (#11)", () => {
+  it("creates only a new active label with a server-selected palette color", async () => {
+    const { call, addLabelWriterKey } = await setup();
+    await addLabelWriterKey("owner");
+    await call("owner", "PUT", "/api/labels/l1", label("l1", "Work"));
+
+    const created = await call(
+      "label-writer-owner",
+      "POST",
+      "/api/labels/l2/create-if-name-free",
+      { name: " personal " },
+    );
+    expect(created).toEqual({ status: 200, json: { ok: true } });
+    const data = await call("owner", "GET", "/api/data");
+    expect(data.json).toMatchObject({
+      labels: [
+        label("l1", "Work"),
+        {
+          id: "l2",
+          name: "Personal",
+          archived: false,
+          schemaVersion: 2,
+        },
+      ],
+      tasks: [],
+    });
+    if (typeof data.json !== "object" || data.json === null) {
+      throw new Error("Expected a Matrix data response.");
+    }
+    const labels: unknown = Reflect.get(data.json, "labels");
+    if (!Array.isArray(labels)) throw new Error("Expected Matrix labels.");
+    const createdLabel: unknown = labels[1];
+    if (typeof createdLabel !== "object" || createdLabel === null) {
+      throw new Error("Expected the created label.");
+    }
+    expect(typeof Reflect.get(createdLabel, "color")).toBe("string");
+  });
+
+  it("rejects duplicate active names, malformed names, and reused ids", async () => {
+    const { call, addLabelWriterKey } = await setup();
+    await addLabelWriterKey("owner");
+    await call("owner", "PUT", "/api/labels/l1", label("l1", "Home"));
+
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/l2/create-if-name-free",
+          {
+            name: " home ",
+          },
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/l2/create-if-name-free",
+          {
+            name: "   ",
+          },
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/l2/create-if-name-free",
+          {
+            name: "New\nLabel",
+          },
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/l2/create-if-name-free",
+          {
+            name: "\ud800",
+          },
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/l1/create-if-name-free",
+          {
+            name: "Other",
+          },
+        )
+      ).status,
+    ).toBe(409);
+    expect((await call("owner", "GET", "/api/data")).json).toMatchObject({
+      labels: [label("l1", "Home")],
+    });
+  });
+
+  it("cannot read data, write tasks, rename labels, or use full label writes", async () => {
+    const { call, addLabelWriterKey, addTaskWriterKey } = await setup();
+    await addLabelWriterKey("owner");
+    await addTaskWriterKey("tester");
+    await call("owner", "PUT", "/api/labels/l1", label("l1", "Home"));
+
+    expect((await call("label-writer-owner", "GET", "/api/data")).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/tasks/t1/create-if-absent",
+          task("t1"),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/l1/save-if-name-free",
+          {
+            label: label("l1", "Changed"),
+          },
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          "task-writer-tester",
+          "POST",
+          "/api/labels/l2/create-if-name-free",
+          {
+            name: "Other",
+          },
+        )
+      ).status,
+    ).toBe(403);
+    expect((await call("owner", "GET", "/api/data")).json).toMatchObject({
+      tasks: [],
+      labels: [label("l1", "Home")],
+    });
+  });
+
+  it("refuses a label when the account has reached its label limit", async () => {
+    const { call, addLabelWriterKey } = await setup();
+    await addLabelWriterKey("owner");
+    for (let i = 0; i < MAX_LABELS; i += 1) {
+      await call(
+        "owner",
+        "PUT",
+        `/api/labels/l${String(i)}`,
+        label(`l${String(i)}`, `Label ${String(i)}`),
+      );
+    }
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/new/create-if-name-free",
+          {
+            name: "One too many",
+          },
+        )
+      ).status,
+    ).toBe(413);
+  });
+
+  it("stops accepting the key immediately after revocation", async () => {
+    const { call, addLabelWriterKey, revokeLabelWriter } = await setup();
+    const id = await addLabelWriterKey("owner");
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/l2/create-if-name-free",
+          {
+            name: "Personal",
+          },
+        )
+      ).status,
+    ).toBe(200);
+    revokeLabelWriter("owner", id);
+    expect(
+      (
+        await call(
+          "label-writer-owner",
+          "POST",
+          "/api/labels/l3/create-if-name-free",
+          {
+            name: "Other",
+          },
+        )
+      ).status,
+    ).toBe(401);
   });
 });
 

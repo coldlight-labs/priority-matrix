@@ -174,6 +174,20 @@ sudo docker compose -f /opt/priority-matrix/deploy/compose.yaml exec server node
 ```
 The existing read-only key remains the read path. This API capability does not create a key or configure a client by itself.
 
+## Scoped label-writer API access (#11)
+
+A label-writer key can create one new active label using the server's default free color. It cannot read account data, create or edit tasks, rename/recolor/archive/restore labels, administer accounts, or call other write routes. The endpoint checks the active name and label limit inside the account's serialized update. Label names already used by an active label are refused.
+
+After deploying the code, create the key on the VPS:
+```bash
+sudo docker compose -f /opt/priority-matrix/deploy/compose.yaml exec server node cli.js create-label-writer-key <account-name>
+```
+The command prints a key id and secret once. Store the secret in the VPS's approved secret configuration for Hermes under `PRIORITY_MATRIX_LABEL_WRITER_KEY`; do not paste it into chat, a note, shell history, or a repository. Keep the id (not the secret) for revocation:
+```bash
+sudo docker compose -f /opt/priority-matrix/deploy/compose.yaml exec server node cli.js revoke-label-writer-key <account-name> <key-id>
+```
+The existing read-only key remains the lookup path. The key is not created or configured automatically by this code change.
+
 ## Switching to the public repo (once)
 The code moved to the public repo `coldlight-labs/priority-matrix`, with a fresh history. Point the VPS at it and pull it once:
 ```bash

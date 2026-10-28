@@ -3,6 +3,7 @@ import {
   createAccount,
   createReadOnlyKey,
   createTaskWriterKey,
+  createLabelWriterKey,
   emptyAccounts,
   findAccount,
   findCredential,
@@ -11,10 +12,12 @@ import {
   newKey,
   newReadOnlyKeyId,
   newTaskWriterKeyId,
+  newLabelWriterKeyId,
   parseAccountsFile,
   revokeAccount,
   revokeReadOnlyKey,
   revokeTaskWriterKey,
+  revokeLabelWriterKey,
   sameHash,
 } from "../../server/accounts";
 
@@ -120,6 +123,52 @@ describe("task-writer keys (#9)", () => {
   it("keeps legacy account records valid without either scoped-key list", async () => {
     const { file } = await withAccount("owner");
     expect(parseAccountsFile(JSON.parse(JSON.stringify(file)))).toEqual(file);
+  });
+});
+
+describe("label-writer keys (#11)", () => {
+  it("creates, parses, authenticates and revokes a key independently", async () => {
+    const { file: full } = await withAccount("owner");
+    const key = "label-writer-secret";
+    const id = newLabelWriterKeyId();
+    const created = createLabelWriterKey(full, {
+      name: "owner",
+      id,
+      keyHash: await hashKey(key),
+      now: NOW,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    expect(parseAccountsFile(created.value)).toEqual(created.value);
+    expect(await findCredential(created.value, key)).toMatchObject({
+      access: "label-writer",
+    });
+    expect(JSON.stringify(created.value)).not.toContain(key);
+
+    const revoked = revokeLabelWriterKey(created.value, "owner", id, NOW);
+    expect(revoked.ok).toBe(true);
+    if (revoked.ok) {
+      expect(await findCredential(revoked.value, key)).toBeUndefined();
+    }
+  });
+
+  it("keeps old account records valid when the optional key list is absent", () => {
+    const legacy = {
+      version: 1,
+      accounts: [
+        {
+          id: "a".repeat(32),
+          name: "owner",
+          keyHash: "b".repeat(64),
+          createdAt: NOW.toISOString(),
+          revokedAt: null,
+        },
+      ],
+    };
+    expect(
+      parseAccountsFile(legacy).accounts[0]?.labelWriterKeys,
+    ).toBeUndefined();
   });
 });
 

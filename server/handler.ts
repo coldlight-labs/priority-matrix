@@ -5,6 +5,7 @@
 
 import {
   changedSince,
+  createLabel,
   parseStoredLabel,
   parseStoredTask,
   upgradeLabelColors,
@@ -67,13 +68,13 @@ interface Route {
   readonly method: string;
   readonly pattern: RegExp;
   readonly name: string;
-  readonly access: "read" | "full-write" | "task-write";
+  readonly access: "read" | "full-write" | "task-write" | "label-write";
   readonly run: (
     accountId: string,
     id: string,
     body: unknown,
     search: URLSearchParams,
-    credentialAccess: "full" | "read-only" | "task-writer",
+    credentialAccess: "full" | "read-only" | "task-writer" | "label-writer",
   ) => Promise<ApiResponse>;
 }
 
@@ -239,6 +240,39 @@ export function createHandler(deps: HandlerDeps) {
     },
     {
       method: "POST",
+      pattern: /^\/api\/labels\/([A-Za-z0-9-]{1,100})\/create-if-name-free$/,
+      name: "POST /api/labels/:id/create-if-name-free",
+      access: "label-write",
+      run: async (accountId, id, body) => {
+        if (
+          !isRecord(body) ||
+          typeof body.name !== "string" ||
+          hasInvalidLabelCharacters(body.name)
+        ) {
+          return error(400, "invalid");
+        }
+        return store.update(accountId, (data) => {
+          if (id in data.labels) {
+            return { changed: false, value: error(409, "conflict") };
+          }
+          if (Object.keys(data.labels).length >= MAX_LABELS) {
+            return { changed: false, value: error(413, "too_many") };
+          }
+          const labels = parsedLabels(data).items;
+          const created = createLabel(body.name, labels, {
+            id,
+            now: deps.now(),
+          });
+          if (!created.ok) {
+            return { changed: false, value: error(400, "invalid") };
+          }
+          data.labels[id] = created.value;
+          return { changed: true, value: { status: 200, json: { ok: true } } };
+        });
+      },
+    },
+    {
+      method: "POST",
       pattern: /^\/api\/labels\/([A-Za-z0-9-]{1,100})\/save-if-name-free$/,
       name: "POST /api/labels/:id/save-if-name-free",
       access: "full-write",
@@ -318,10 +352,14 @@ export function createHandler(deps: HandlerDeps) {
       routeName = route.name;
       const allowed =
         route.access === "read"
-          ? credential.access !== "task-writer"
+          ? credential.access === "full" || credential.access === "read-only"
           : route.access === "task-write"
-            ? credential.access !== "read-only"
-            : credential.access === "full";
+            ? credential.access === "full" ||
+              credential.access === "task-writer"
+            : route.access === "label-write"
+              ? credential.access === "full" ||
+                credential.access === "label-writer"
+              : credential.access === "full";
       if (!allowed) {
         return finish(error(403, "forbidden"));
       }
@@ -427,4 +465,15 @@ function withoutKey(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasInvalidLabelCharacters(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return (
+      codePoint < 0x20 ||
+      codePoint === 0x7f ||
+      (codePoint >= 0xd800 && codePoint <= 0xdfff)
+    );
+  });
 }

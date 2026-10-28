@@ -131,4 +131,22 @@ describe("account command (#62)", () => {
     expect(await findCredential(file(), key)).toBeUndefined();
     expect(await hashKey(key)).not.toBe(file().accounts[0]?.keyHash);
   });
+
+  it("creates and revokes a label-writer key, showing its secret once", async () => {
+    const { run, file } = setup();
+    await run("create", "owner", "--empty");
+    const output = await run("create-label-writer-key", "owner");
+    const keyId = /^Key id: ([0-9a-f]{32})$/m.exec(output.text)?.[1] ?? "";
+    const key = /^Key: ([A-Za-z0-9_-]{43})$/m.exec(output.text)?.[1] ?? "";
+    expect(output.code).toBe(0);
+    expect(keyId).toMatch(/^[0-9a-f]{32}$/);
+    expect(key).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(JSON.stringify(file())).not.toContain(key);
+    expect(await findCredential(file(), key)).toMatchObject({
+      account: { name: "owner" },
+      access: "label-writer",
+    });
+    expect((await run("revoke-label-writer-key", "owner", keyId)).code).toBe(0);
+    expect(await findCredential(file(), key)).toBeUndefined();
+  });
 });
