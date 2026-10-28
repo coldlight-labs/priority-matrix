@@ -147,6 +147,19 @@ Later:
 - See last night's run: `journalctl -u priority-matrix-backup --since yesterday`
 - Restore after a mistake: step 2.3 with the night you want. Everything since that night is lost, so pick the latest good one.
 
+## Read-only API access for an external assistant (#7)
+The server can issue a separate read-only key for an active account. It can call only `GET /api/data`, which returns **all tasks and labels** for that account. It cannot create, edit, or delete anything. This is a server capability only; it does not configure Hermes or send it a key.
+
+On the VPS, run the account command inside the server container as an administrator:
+```bash
+sudo docker compose -f /opt/priority-matrix/deploy/compose.yaml exec server node cli.js create-read-only-key owner
+```
+The key is printed once. Store it in an approved secrets manager and provide it to the client through that manager's secure mechanism; never paste it into chat, a note, shell history, or a repository. The command prints a key id alongside it. Keep the id (not the secret) so this key can be revoked later:
+```bash
+sudo docker compose -f /opt/priority-matrix/deploy/compose.yaml exec server node cli.js revoke-read-only-key owner <key-id>
+```
+The browser's existing full-access link remains unchanged. Revoking a read-only key does not revoke that link or affect task data.
+
 ## Switching to the public repo (once)
 The code moved to the public repo `coldlight-labs/priority-matrix`, with a fresh history. Point the VPS at it and pull it once:
 ```bash

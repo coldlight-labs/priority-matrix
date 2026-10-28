@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   createAccount,
+  createReadOnlyKey,
   emptyAccounts,
   findAccount,
+  findCredential,
   hashKey,
   newAccountId,
   newKey,
+  newReadOnlyKeyId,
   parseAccountsFile,
   revokeAccount,
+  revokeReadOnlyKey,
   sameHash,
 } from "../../server/accounts";
 
@@ -61,6 +65,76 @@ describe("finding an account by key (#62)", () => {
     const revoked = revokeAccount(file, "tester-a", NOW);
     if (!revoked.ok) throw new Error("revoke");
     expect(await findAccount(revoked.value, key)).toBeUndefined();
+  });
+});
+
+describe("read-only account keys (#7)", () => {
+  it("adds a hashed key scoped to one active account", async () => {
+    const { file } = await withAccount("owner");
+    const key = newKey();
+    const added = createReadOnlyKey(file, {
+      name: "owner",
+      id: newReadOnlyKeyId(),
+      keyHash: await hashKey(key),
+      now: NOW,
+    });
+    if (!added.ok) throw new Error("add read-only key");
+    const credential = await findCredential(added.value, key);
+    expect(credential).toMatchObject({
+      account: { name: "owner" },
+      access: "read-only",
+    });
+    expect(JSON.stringify(added.value)).not.toContain(key);
+    expect(added.value.accounts[0]?.readOnlyKeys?.[0]?.keyHash).toMatch(
+      /^[0-9a-f]{64}$/,
+    );
+    expect(await findAccount(added.value, key)).toMatchObject({
+      name: "owner",
+    });
+  });
+
+  it("preserves legacy account records without read-only keys", async () => {
+    const { file } = await withAccount("owner");
+    const parsed = parseAccountsFile(JSON.parse(JSON.stringify(file)));
+    expect(parsed).toEqual(file);
+    expect(parsed.accounts[0]).not.toHaveProperty("readOnlyKeys");
+  });
+
+  it("revokes one read-only key without revoking the account's browser key", async () => {
+    const { key: fullKey, file } = await withAccount("owner");
+    const readOnlyKey = newKey();
+    const keyId = newReadOnlyKeyId();
+    const added = createReadOnlyKey(file, {
+      name: "owner",
+      id: keyId,
+      keyHash: await hashKey(readOnlyKey),
+      now: NOW,
+    });
+    if (!added.ok) throw new Error("add read-only key");
+    const revoked = revokeReadOnlyKey(added.value, "owner", keyId, NOW);
+    if (!revoked.ok) throw new Error("revoke read-only key");
+    expect(await findCredential(revoked.value, readOnlyKey)).toBeUndefined();
+    expect((await findCredential(revoked.value, fullKey))?.access).toBe("full");
+    expect(revokeReadOnlyKey(revoked.value, "owner", keyId, NOW)).toEqual({
+      ok: true,
+      value: revoked.value,
+    });
+  });
+
+  it("refuses to add a key for a missing or revoked account", async () => {
+    const { file } = await withAccount("owner");
+    const revoked = revokeAccount(file, "owner", NOW);
+    if (!revoked.ok) throw new Error("revoke account");
+    const input = {
+      name: "owner",
+      id: newReadOnlyKeyId(),
+      keyHash: await hashKey(newKey()),
+      now: NOW,
+    };
+    expect(createReadOnlyKey(file, { ...input, name: "missing" }).ok).toBe(
+      false,
+    );
+    expect(createReadOnlyKey(revoked.value, input).ok).toBe(false);
   });
 });
 
@@ -118,6 +192,21 @@ describe("the accounts file (#62)", () => {
   it("refuses a malformed file rather than guessing", () => {
     expect(() => parseAccountsFile({ version: 1, accounts: [{}] })).toThrow();
     expect(() => parseAccountsFile("nope")).toThrow();
+    expect(() =>
+      parseAccountsFile({
+        version: 1,
+        accounts: [
+          {
+            id: "0".repeat(32),
+            name: "owner",
+            keyHash: "0".repeat(64),
+            createdAt: NOW.toISOString(),
+            revokedAt: null,
+            readOnlyKeys: [{ id: "bad", keyHash: "bad" }],
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it("makes server account ids of 32 hex characters", () => {

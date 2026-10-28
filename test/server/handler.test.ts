@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { Label, Task } from "../../src/core";
 import {
   createAccount,
+  createReadOnlyKey,
   emptyAccounts,
   hashKey,
   newAccountId,
   newKey,
+  newReadOnlyKeyId,
+  revokeReadOnlyKey,
   revokeAccount,
   type AccountsFile,
 } from "../../server/accounts";
@@ -117,9 +120,30 @@ async function setup(limit = 1000) {
     };
     return handle(request);
   };
+  const addReadOnlyKey = async (name: string) => {
+    const key = newKey();
+    const id = newReadOnlyKeyId();
+    const added = createReadOnlyKey(accounts, {
+      name,
+      id,
+      keyHash: await hashKey(key),
+      now: NOW,
+    });
+    if (!added.ok) throw new Error("add read-only key");
+    accounts = added.value;
+    keys[`read-only-${name}`] = key;
+    return id;
+  };
+  const revokeReadOnly = (name: string, id: string) => {
+    const revoked = revokeReadOnlyKey(accounts, name, id, NOW);
+    if (!revoked.ok) throw new Error("revoke read-only key");
+    accounts = revoked.value;
+  };
   return {
     call,
     logs,
+    addReadOnlyKey,
+    revokeReadOnly,
     revoke: (name: string) => {
       const r = revokeAccount(accounts, name, NOW);
       if (!r.ok) throw new Error("revoke");
@@ -169,6 +193,51 @@ describe("keys (#62)", () => {
     expect(text).not.toContain("Secret plan");
     expect(text).not.toContain("wrong-key-value");
     expect(logs[0]).toMatchObject({ route: "PUT /api/tasks/:id", status: 200 });
+  });
+});
+
+describe("read-only keys (#7)", () => {
+  it("reads the account data and refuses every task or label mutation", async () => {
+    const { call, addReadOnlyKey } = await setup();
+    await addReadOnlyKey("owner");
+    await call("owner", "PUT", "/api/tasks/t1", task("t1"));
+    const before = await call("read-only-owner", "GET", "/api/data");
+    expect(before.status).toBe(200);
+    expect(before.json).toMatchObject({ tasks: [{ id: "t1" }] });
+
+    const writes: [string, string, unknown][] = [
+      ["PUT", "/api/tasks/t1", task("t1", { text: "Changed" })],
+      [
+        "POST",
+        "/api/tasks/t1/save-if-unchanged",
+        { loaded: task("t1"), updated: task("t1", { text: "Changed" }) },
+      ],
+      ["POST", "/api/tasks/t1/delete-if-unchanged", { loaded: task("t1") }],
+      ["PUT", "/api/labels/l1", label("l1", "Work")],
+      [
+        "POST",
+        "/api/labels/l1/save-if-name-free",
+        { label: label("l1", "Work") },
+      ],
+    ];
+    for (const [method, path, body] of writes) {
+      expect((await call("read-only-owner", method, path, body)).status).toBe(
+        403,
+      );
+    }
+    expect((await call("owner", "GET", "/api/data")).json).toEqual(before.json);
+  });
+
+  it("stops accepting a read-only key immediately after revocation", async () => {
+    const { call, addReadOnlyKey, revokeReadOnly } = await setup();
+    const keyId = await addReadOnlyKey("owner");
+    expect((await call("read-only-owner", "GET", "/api/data")).status).toBe(
+      200,
+    );
+    revokeReadOnly("owner", keyId);
+    expect((await call("read-only-owner", "GET", "/api/data")).status).toBe(
+      401,
+    );
   });
 });
 

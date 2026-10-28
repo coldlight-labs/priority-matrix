@@ -9,8 +9,22 @@ export interface Account {
   readonly id: string;
   readonly name: string;
   readonly keyHash: string;
+  readonly readOnlyKeys?: readonly ReadOnlyKey[];
   readonly createdAt: string;
   readonly revokedAt: string | null;
+}
+
+/** A separately revocable bearer key that can read, but never change, one account. */
+export interface ReadOnlyKey {
+  readonly id: string;
+  readonly keyHash: string;
+  readonly createdAt: string;
+  readonly revokedAt: string | null;
+}
+
+export interface AccountCredential {
+  readonly account: Account;
+  readonly access: "full" | "read-only";
 }
 
 /** The accounts file, `accounts.json` in the data folder. */
@@ -44,6 +58,11 @@ export function newAccountId(): string {
   return hex(crypto.getRandomValues(new Uint8Array(ID_BYTES)));
 }
 
+/** A new identifier for a read-only key, as 32 lowercase hexadecimal characters. */
+export function newReadOnlyKeyId(): string {
+  return hex(crypto.getRandomValues(new Uint8Array(ID_BYTES)));
+}
+
 /** The SHA-256 hash of a key, as lowercase hex. */
 export async function hashKey(key: string): Promise<string> {
   const digest = await crypto.subtle.digest(
@@ -65,20 +84,37 @@ export function sameHash(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** The active account whose key this is, or undefined. Checks every account. */
+/** Finds the active account and access level for a key, checking every account. */
+export async function findCredential(
+  file: AccountsFile,
+  key: string,
+): Promise<AccountCredential | undefined> {
+  if (key === "") return undefined;
+  const hash = await hashKey(key);
+  let found: AccountCredential | undefined;
+  for (const account of file.accounts) {
+    if (account.revokedAt !== null) continue;
+    if (sameHash(account.keyHash, hash)) {
+      found = { account, access: "full" };
+    }
+    for (const readOnlyKey of account.readOnlyKeys ?? []) {
+      if (
+        readOnlyKey.revokedAt === null &&
+        sameHash(readOnlyKey.keyHash, hash)
+      ) {
+        found = { account, access: "read-only" };
+      }
+    }
+  }
+  return found;
+}
+
+/** The active account for any of its keys, or undefined. */
 export async function findAccount(
   file: AccountsFile,
   key: string,
 ): Promise<Account | undefined> {
-  if (key === "") return undefined;
-  const hash = await hashKey(key);
-  let found: Account | undefined;
-  for (const account of file.accounts) {
-    if (sameHash(account.keyHash, hash) && account.revokedAt === null) {
-      found = account;
-    }
-  }
-  return found;
+  return (await findCredential(file, key))?.account;
 }
 
 /** Adds an account. Refused for a malformed name or one an active account has. */
@@ -113,6 +149,95 @@ export function createAccount(
   return {
     ok: true,
     value: { ...file, accounts: [...file.accounts, account] },
+  };
+}
+
+/** Adds a separately revocable read-only key to an active account. */
+export function createReadOnlyKey(
+  file: AccountsFile,
+  input: { name: string; id: string; keyHash: string; now: Date },
+): Result<AccountsFile> {
+  const account = file.accounts.find(
+    (candidate) =>
+      candidate.name === input.name && candidate.revokedAt === null,
+  );
+  if (account === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "name", message: "No active account has this name." }],
+    };
+  }
+  const readOnlyKeys = account.readOnlyKeys ?? [];
+  if (readOnlyKeys.some((candidate) => candidate.id === input.id)) {
+    return {
+      ok: false,
+      errors: [{ field: "id", message: "Refused." }],
+    };
+  }
+  const updatedAccount: Account = {
+    ...account,
+    readOnlyKeys: [
+      ...readOnlyKeys,
+      {
+        id: input.id,
+        keyHash: input.keyHash,
+        createdAt: input.now.toISOString(),
+        revokedAt: null,
+      },
+    ],
+  };
+  return {
+    ok: true,
+    value: {
+      ...file,
+      accounts: file.accounts.map((candidate) =>
+        candidate.id === account.id ? updatedAccount : candidate,
+      ),
+    },
+  };
+}
+
+/** Revokes one read-only key. Repeating a successful revoke is harmless. */
+export function revokeReadOnlyKey(
+  file: AccountsFile,
+  name: string,
+  keyId: string,
+  now: Date,
+): Result<AccountsFile> {
+  const account = file.accounts.find(
+    (candidate) => candidate.name === name && candidate.revokedAt === null,
+  );
+  if (account === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "name", message: "No active account has this name." }],
+    };
+  }
+  const keys = account.readOnlyKeys ?? [];
+  const key = keys.find((candidate) => candidate.id === keyId);
+  if (key === undefined) {
+    return {
+      ok: false,
+      errors: [{ field: "keyId", message: "No read-only key has this id." }],
+    };
+  }
+  if (key.revokedAt !== null) return { ok: true, value: file };
+  const updatedAccount: Account = {
+    ...account,
+    readOnlyKeys: keys.map((candidate) =>
+      candidate.id === keyId
+        ? { ...candidate, revokedAt: now.toISOString() }
+        : candidate,
+    ),
+  };
+  return {
+    ok: true,
+    value: {
+      ...file,
+      accounts: file.accounts.map((candidate) =>
+        candidate.id === account.id ? updatedAccount : candidate,
+      ),
+    },
   };
 }
 
@@ -160,15 +285,43 @@ export function parseAccountsFile(doc: unknown): AccountsFile {
     ) {
       throw new Error("Accounts file has a malformed account.");
     }
+    const readOnlyKeys = parseReadOnlyKeys(a.readOnlyKeys);
     return {
       id: a.id,
       name: a.name,
       keyHash: a.keyHash,
+      ...(readOnlyKeys === undefined ? {} : { readOnlyKeys }),
       createdAt: a.createdAt,
       revokedAt: a.revokedAt,
     };
   });
   return { version: 1, accounts };
+}
+
+function parseReadOnlyKeys(value: unknown): readonly ReadOnlyKey[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error("Accounts file has malformed read-only keys.");
+  }
+  return value.map((key: unknown): ReadOnlyKey => {
+    if (
+      !isRecord(key) ||
+      typeof key.id !== "string" ||
+      !ID_PATTERN.test(key.id) ||
+      typeof key.keyHash !== "string" ||
+      !HASH_PATTERN.test(key.keyHash) ||
+      typeof key.createdAt !== "string" ||
+      !(key.revokedAt === null || typeof key.revokedAt === "string")
+    ) {
+      throw new Error("Accounts file has a malformed read-only key.");
+    }
+    return {
+      id: key.id,
+      keyHash: key.keyHash,
+      createdAt: key.createdAt,
+      revokedAt: key.revokedAt,
+    };
+  });
 }
 
 function active(file: AccountsFile): readonly Account[] {
