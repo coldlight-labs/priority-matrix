@@ -5,9 +5,12 @@
 import { starterLabels, type Label } from "../src/core";
 import {
   createAccount,
+  createReadOnlyKey,
   hashKey,
   newAccountId,
   newKey,
+  newReadOnlyKeyId,
+  revokeReadOnlyKey,
   revokeAccount,
   type AccountsFile,
 } from "./accounts";
@@ -36,8 +39,10 @@ const USAGE = [
   "Usage:",
   "  create <name> [--empty]   new account with starter labels (--empty: none);",
   "                            prints its link once",
+  "  create-read-only-key <name>  key for an active account; shown once",
   "  list            accounts, created and revoked dates",
   "  revoke <name>   turn an account's link off",
+  "  revoke-read-only-key <name> <key-id>  turn one read-only key off",
   "Names: 1 to 32 lowercase letters, digits or dashes.",
 ].join("\n");
 
@@ -46,7 +51,7 @@ export async function runAdmin(
   args: readonly string[],
   deps: AdminDeps,
 ): Promise<AdminOutput> {
-  const [command, name] = args;
+  const [command, name, keyId] = args;
   if (command === "list" && args.length === 1) {
     const file = await deps.readAccounts();
     if (file.accounts.length === 0)
@@ -92,6 +97,30 @@ export async function runAdmin(
       ].join("\n"),
     };
   }
+  if (
+    command === "create-read-only-key" &&
+    name !== undefined &&
+    args.length === 2
+  ) {
+    const key = newKey();
+    const id = newReadOnlyKeyId();
+    const result = createReadOnlyKey(await deps.readAccounts(), {
+      name,
+      id,
+      keyHash: await hashKey(key),
+      now: deps.now(),
+    });
+    if (!result.ok) return { code: 1, text: messageOf(result.errors) };
+    await deps.writeAccounts(result.value);
+    return {
+      code: 0,
+      text: [
+        `Created read-only key for ${name}. Store it securely; it is shown only once:`,
+        `Key id: ${id}`,
+        `Key: ${key}`,
+      ].join("\n"),
+    };
+  }
   if (command === "revoke" && name !== undefined && args.length === 2) {
     const result = revokeAccount(await deps.readAccounts(), name, deps.now());
     if (!result.ok) return { code: 1, text: messageOf(result.errors) };
@@ -100,6 +129,22 @@ export async function runAdmin(
       code: 0,
       text: `Revoked ${name}. Their link no longer works; their data stays until deleted.`,
     };
+  }
+  if (
+    command === "revoke-read-only-key" &&
+    name !== undefined &&
+    keyId !== undefined &&
+    args.length === 3
+  ) {
+    const result = revokeReadOnlyKey(
+      await deps.readAccounts(),
+      name,
+      keyId,
+      deps.now(),
+    );
+    if (!result.ok) return { code: 1, text: messageOf(result.errors) };
+    await deps.writeAccounts(result.value);
+    return { code: 0, text: `Revoked read-only key ${keyId} for ${name}.` };
   }
   return { code: 1, text: USAGE };
 }

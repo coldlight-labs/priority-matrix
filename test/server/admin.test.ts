@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   emptyAccounts,
   findAccount,
+  findCredential,
   type AccountsFile,
 } from "../../server/accounts";
 import { runAdmin } from "../../server/admin";
@@ -87,5 +88,27 @@ describe("account command (#62)", () => {
     expect((await run("create", "owner", "--empty")).code).toBe(0);
     expect(file().accounts).toHaveLength(1);
     expect(added.size).toBe(0);
+  });
+
+  it("creates and revokes a read-only key separately from the account link", async () => {
+    const { run, file } = setup();
+    const created = await run("create", "owner", "--empty");
+    const fullKey = /#key=([A-Za-z0-9_-]+)/.exec(created.text)?.[1] ?? "";
+    const output = await run("create-read-only-key", "owner");
+    const keyId = /^Key id: ([0-9a-f]{32})$/m.exec(output.text)?.[1] ?? "";
+    const readOnlyKey =
+      /^Key: ([A-Za-z0-9_-]{43})$/m.exec(output.text)?.[1] ?? "";
+    expect(output.code).toBe(0);
+    expect(keyId).toMatch(/^[0-9a-f]{32}$/);
+    expect(readOnlyKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(JSON.stringify(file())).not.toContain(readOnlyKey);
+    expect(await findCredential(file(), readOnlyKey)).toMatchObject({
+      account: { name: "owner" },
+      access: "read-only",
+    });
+
+    expect((await run("revoke-read-only-key", "owner", keyId)).code).toBe(0);
+    expect(await findCredential(file(), readOnlyKey)).toBeUndefined();
+    expect((await findCredential(file(), fullKey))?.access).toBe("full");
   });
 });

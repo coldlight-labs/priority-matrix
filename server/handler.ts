@@ -13,7 +13,7 @@ import {
   type Task,
   type ValidationError,
 } from "../src/core";
-import { findAccount, type AccountsFile } from "./accounts";
+import { findCredential, type AccountsFile } from "./accounts";
 import type { RateLimiter } from "./limits";
 import type { AccountData, Store } from "./store";
 
@@ -67,6 +67,7 @@ interface Route {
   readonly method: string;
   readonly pattern: RegExp;
   readonly name: string;
+  readonly access: "read" | "write";
   readonly run: (
     accountId: string,
     id: string,
@@ -84,6 +85,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "GET",
       pattern: /^\/api\/data$/,
       name: "GET /api/data",
+      access: "read",
       run: async (accountId, _id, _body, search) => {
         const data = await store.read(accountId);
         const since = Number(search.get("since"));
@@ -110,6 +112,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "PUT",
       pattern: /^\/api\/tasks\/([A-Za-z0-9-]{1,100})$/,
       name: "PUT /api/tasks/:id",
+      access: "write",
       run: async (accountId, id, body) => {
         const t = checkTask(body, id);
         if (t === undefined) return error(400, "invalid");
@@ -129,6 +132,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "POST",
       pattern: /^\/api\/tasks\/([A-Za-z0-9-]{1,100})\/save-if-unchanged$/,
       name: "POST /api/tasks/:id/save-if-unchanged",
+      access: "write",
       run: async (accountId, id, body) => {
         if (!isRecord(body)) return error(400, "invalid");
         const loaded = checkTask(body.loaded, id);
@@ -155,6 +159,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "POST",
       pattern: /^\/api\/tasks\/([A-Za-z0-9-]{1,100})\/delete-if-unchanged$/,
       name: "POST /api/tasks/:id/delete-if-unchanged",
+      access: "write",
       run: async (accountId, id, body) => {
         if (!isRecord(body)) return error(400, "invalid");
         const loaded = checkTask(body.loaded, id);
@@ -179,6 +184,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "PUT",
       pattern: /^\/api\/labels\/([A-Za-z0-9-]{1,100})$/,
       name: "PUT /api/labels/:id",
+      access: "write",
       run: async (accountId, id, body) => {
         const l = checkLabel(body, id);
         if (l === undefined) return error(400, "invalid");
@@ -198,6 +204,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "POST",
       pattern: /^\/api\/labels\/([A-Za-z0-9-]{1,100})\/save-if-name-free$/,
       name: "POST /api/labels/:id/save-if-name-free",
+      access: "write",
       run: async (accountId, id, body) => {
         if (!isRecord(body)) return error(400, "invalid");
         const l = checkLabel(body.label, id);
@@ -250,17 +257,18 @@ export function createHandler(deps: HandlerDeps) {
         return finish(error(429, "rate_limited"));
       }
       const key = bearer(request.authorization);
-      const account =
+      const credential =
         key === undefined
           ? undefined
-          : await findAccount(await deps.loadAccounts(), key);
-      if (account === undefined) {
+          : await findCredential(await deps.loadAccounts(), key);
+      if (credential === undefined) {
         // Count only wrong keys, so guessing is slowed without blocking a valid key.
         const allowed = deps.limits.failedKey.allow(`ip:${request.ip}`);
         return finish(
           error(allowed ? 401 : 429, allowed ? "unauthorized" : "rate_limited"),
         );
       }
+      const account = credential.account;
       accountId = account.id;
       if (!deps.limits.request.allow(`account:${account.id}`)) {
         return finish(error(429, "rate_limited"));
@@ -271,6 +279,9 @@ export function createHandler(deps: HandlerDeps) {
       const route = matches.find((r) => r.method === request.method);
       if (route === undefined) return finish(error(405, "method_not_allowed"));
       routeName = route.name;
+      if (credential.access === "read-only" && route.access !== "read") {
+        return finish(error(403, "forbidden"));
+      }
 
       if (new TextEncoder().encode(request.body).length > MAX_BODY_BYTES) {
         return finish(error(413, "too_large"));
