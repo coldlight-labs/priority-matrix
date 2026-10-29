@@ -68,7 +68,12 @@ interface Route {
   readonly method: string;
   readonly pattern: RegExp;
   readonly name: string;
-  readonly access: "read" | "full-write" | "task-write" | "label-write";
+  readonly access:
+    | "read"
+    | "full-write"
+    | "task-write"
+    | "label-write"
+    | "task-or-label-write";
   readonly run: (
     accountId: string,
     id: string,
@@ -242,7 +247,7 @@ export function createHandler(deps: HandlerDeps) {
       method: "POST",
       pattern: /^\/api\/labels\/([A-Za-z0-9-]{1,100})\/create-if-name-free$/,
       name: "POST /api/labels/:id/create-if-name-free",
-      access: "label-write",
+      access: "task-or-label-write",
       run: async (accountId, id, body) => {
         if (
           !isRecord(body) ||
@@ -267,6 +272,53 @@ export function createHandler(deps: HandlerDeps) {
             return { changed: false, value: error(400, "invalid") };
           }
           data.labels[id] = created.value;
+          return { changed: true, value: { status: 200, json: { ok: true } } };
+        });
+      },
+    },
+    {
+      method: "POST",
+      pattern: /^\/api\/labels\/([A-Za-z0-9-]{1,100})\/save-if-unchanged$/,
+      name: "POST /api/labels/:id/save-if-unchanged",
+      access: "task-write",
+      run: async (accountId, id, body) => {
+        if (!isRecord(body)) return error(400, "invalid");
+        const loaded = checkLabel(body.loaded, id);
+        const proposed = checkLabel(body.updated, id);
+        if (loaded === undefined || proposed === undefined) {
+          return error(400, "invalid");
+        }
+        if (proposed.createdAt !== loaded.createdAt) {
+          return error(400, "invalid");
+        }
+        return store.update(accountId, (data) => {
+          const current = storedLabel(data, id);
+          if (current === undefined || labelChangedSince(loaded, current)) {
+            return { changed: false, value: error(409, "conflict") };
+          }
+          const stored = parsedLabels(data).items;
+          let name = proposed.name;
+          if (!proposed.archived) {
+            const checked = validateLabelName(proposed.name, stored, id);
+            if (!checked.ok) {
+              return {
+                changed: false,
+                value: nameRefused(checked.errors, stored),
+              };
+            }
+            name = checked.value;
+          }
+          if (!labelFieldsChanged(current, proposed)) {
+            return {
+              changed: false,
+              value: { status: 200, json: { ok: true } },
+            };
+          }
+          data.labels[id] = {
+            ...proposed,
+            name,
+            updatedAt: deps.now().toISOString(),
+          };
           return { changed: true, value: { status: 200, json: { ok: true } } };
         });
       },
@@ -359,7 +411,11 @@ export function createHandler(deps: HandlerDeps) {
             : route.access === "label-write"
               ? credential.access === "full" ||
                 credential.access === "label-writer"
-              : credential.access === "full";
+              : route.access === "task-or-label-write"
+                ? credential.access === "full" ||
+                  credential.access === "task-writer" ||
+                  credential.access === "label-writer"
+                : credential.access === "full";
       if (!allowed) {
         return finish(error(403, "forbidden"));
       }
@@ -414,6 +470,33 @@ function checkLabel(doc: unknown, id: string): Label | undefined {
 function storedTask(data: AccountData, id: string): Task | undefined {
   const parsed = parseStoredTask(data.tasks[id]);
   return parsed.ok ? parsed.value : undefined;
+}
+
+/** The stored label with this id, if core accepts it. */
+function storedLabel(data: AccountData, id: string): Label | undefined {
+  const parsed = parseStoredLabel(data.labels[id]);
+  return parsed.ok ? upgradeLabelColors([parsed.value])[0] : undefined;
+}
+
+/** Detects stale labels by comparing every persisted field, not only the timestamp. */
+function labelChangedSince(loaded: Label, stored: Label): boolean {
+  return (
+    loaded.id !== stored.id ||
+    loaded.name !== stored.name ||
+    loaded.archived !== stored.archived ||
+    loaded.color !== stored.color ||
+    loaded.createdAt !== stored.createdAt ||
+    loaded.updatedAt !== stored.updatedAt
+  );
+}
+
+/** Label fields the scoped writer may change; storage metadata stays server-owned. */
+function labelFieldsChanged(current: Label, proposed: Label): boolean {
+  return (
+    current.name !== proposed.name ||
+    current.archived !== proposed.archived ||
+    current.color !== proposed.color
+  );
 }
 
 /** A task may be created or relabeled only to a valid, active label. */

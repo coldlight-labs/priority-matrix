@@ -389,6 +389,21 @@ describe("task-writer keys (#9)", () => {
         )
       ).status,
     ).toBe(409);
+    const completed = task("t1", {
+      text: "Updated action",
+      status: "done",
+      updatedAt: "2026-10-27T08:45:00.000Z",
+    });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/tasks/t1/save-if-unchanged",
+          { loaded: updated, updated: completed },
+        )
+      ).status,
+    ).toBe(200);
     const dropped = task("t1", {
       text: "Updated action",
       status: "dropped",
@@ -401,7 +416,7 @@ describe("task-writer keys (#9)", () => {
           "POST",
           "/api/tasks/t1/save-if-unchanged",
           {
-            loaded: updated,
+            loaded: completed,
             updated: dropped,
           },
         )
@@ -823,7 +838,7 @@ describe("label-writer keys (#11)", () => {
     });
   });
 
-  it("cannot read data, write tasks, rename labels, or use full label writes", async () => {
+  it("cannot read data, write tasks, or update an existing label", async () => {
     const { call, addLabelWriterKey, addTaskWriterKey } = await setup();
     await addLabelWriterKey("owner");
     await addTaskWriterKey("tester");
@@ -847,10 +862,8 @@ describe("label-writer keys (#11)", () => {
         await call(
           "label-writer-owner",
           "POST",
-          "/api/labels/l1/save-if-name-free",
-          {
-            label: label("l1", "Changed"),
-          },
+          "/api/labels/l1/save-if-unchanged",
+          { loaded: label("l1", "Home"), updated: label("l1", "Changed") },
         )
       ).status,
     ).toBe(403);
@@ -860,15 +873,13 @@ describe("label-writer keys (#11)", () => {
           "task-writer-tester",
           "POST",
           "/api/labels/l2/create-if-name-free",
-          {
-            name: "Other",
-          },
+          { name: "Other" },
         )
       ).status,
-    ).toBe(403);
-    expect((await call("owner", "GET", "/api/data")).json).toMatchObject({
+    ).toBe(200);
+    expect((await call("tester", "GET", "/api/data")).json).toMatchObject({
       tasks: [],
-      labels: [label("l1", "Home")],
+      labels: [expect.objectContaining({ name: "Other" })],
     });
   });
 
@@ -925,6 +936,130 @@ describe("label-writer keys (#11)", () => {
         )
       ).status,
     ).toBe(401);
+  });
+});
+
+describe("task-writer label management", () => {
+  it("renames, recolors, archives, and restores a label only from its current snapshot", async () => {
+    const { call, addTaskWriterKey } = await setup();
+    await addTaskWriterKey("owner");
+    const original = label("l1", "Home");
+    await call("owner", "PUT", "/api/labels/l1", original);
+
+    const renamed = label("l1", "Personal", {
+      color: "purple",
+      updatedAt: "2026-10-27T09:00:00.000Z",
+    });
+    const proposedRename = label("l1", "personal", {
+      color: "purple",
+      updatedAt: "2026-10-27T09:00:00.000Z",
+    });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/labels/l1/save-if-unchanged",
+          {
+            loaded: original,
+            updated: proposedRename,
+          },
+        )
+      ).status,
+    ).toBe(200);
+    expect((await call("owner", "GET", "/api/data")).json).toMatchObject({
+      labels: [expect.objectContaining({ name: "Personal", color: "purple" })],
+    });
+
+    const stale = label("l1", "Home", { updatedAt: T1 });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/labels/l1/save-if-unchanged",
+          {
+            loaded: original,
+            updated: stale,
+          },
+        )
+      ).status,
+    ).toBe(409);
+
+    const archived = label("l1", "Personal", {
+      color: "purple",
+      archived: true,
+      updatedAt: "2026-10-27T09:00:00.000Z",
+    });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/labels/l1/save-if-unchanged",
+          {
+            loaded: renamed,
+            updated: archived,
+          },
+        )
+      ).status,
+    ).toBe(200);
+    const restored = label("l1", "Personal", {
+      color: "purple",
+      archived: false,
+      updatedAt: "2026-10-27T09:00:00.000Z",
+    });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/labels/l1/save-if-unchanged",
+          {
+            loaded: archived,
+            updated: restored,
+          },
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  it("rejects duplicate active names and changes to storage-owned metadata", async () => {
+    const { call, addTaskWriterKey } = await setup();
+    await addTaskWriterKey("owner");
+    const first = label("l1", "Home");
+    const second = label("l2", "Work");
+    await call("owner", "PUT", "/api/labels/l1", first);
+    await call("owner", "PUT", "/api/labels/l2", second);
+
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/labels/l2/save-if-unchanged",
+          {
+            loaded: second,
+            updated: label("l2", "home", { updatedAt: T1 }),
+          },
+        )
+      ).json,
+    ).toMatchObject({ ok: false });
+    expect(
+      (
+        await call(
+          "task-writer-owner",
+          "POST",
+          "/api/labels/l2/save-if-unchanged",
+          {
+            loaded: second,
+            updated: label("l2", "Personal", {
+              createdAt: "2026-10-01T00:00:00.000Z",
+            }),
+          },
+        )
+      ).status,
+    ).toBe(400);
   });
 });
 
