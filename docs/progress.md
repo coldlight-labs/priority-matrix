@@ -1,11 +1,17 @@
 # Progress
 
 ## Current state
-- Working on: #11 create-only label-writer API role (branch `11-label-writer-api`) in the public repo `coldlight-labs/priority-matrix`.
-- Status: API role, atomic create route, CLI key creation/revocation, focused tests, ADR, hosting guide, and architecture updates are implemented locally. No key was generated and no deployment occurred.
-- Next step: the paired Hermes issue #13 implementation is complete locally. Review both repositories, then request approval before pushing either branch.
-- Architecture impact: structural; adds a credential role and an API route. The trust boundary and ADR 0006 are documented in this change.
-- Last labels used: Q121, i167
+- Working on: proposed task-writer extension in `coldlight-labs/priority-matrix`, branch `13-agent-writer-status-label-management`.
+- Status: API changes are committed and pushed as `d7c65a2`; issue #13 is open. Full checks passed, including 628 tests and the private-word scan. No key was generated, no data changed, and no deployment occurred.
+- Next step: open the PR for issue #13. GitHub's connected integration returned 403, and the signed-in Mac locked before the browser fallback reached the PR form. The user can open it from the branch comparison link or unlock the Mac for another attempt. The user merges both PRs and runs deployment commands.
+- Architecture impact: local API authorization change; extends the existing task-writer without adding a role or service. ADR 0007 documents the trust boundary.
+- Last labels used: none
+
+### 2026-10-29
+- Started: extend one task-writer key per profile to cover task status and label management.
+- Implemented: task-writer label creation and checked label updates for rename, recolor, archive, and restore. Existing create-only label-writer keys remain compatible.
+- Safety: checked label changes compare the full loaded label, preserve storage-owned metadata, and reject duplicate active names. No reads, unrestricted upserts, account administration, or permanent deletion were added.
+- Opened public issue #13 through the signed-in browser after the GitHub integration denied issue creation. Committed and pushed the API implementation after all checks passed. Pull-request creation remains blocked by the integration's 403 and the Mac lock. No keys, tasks, labels, or deployed service were changed.
 
 ## Log
 ### 2026-10-29
