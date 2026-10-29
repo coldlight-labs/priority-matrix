@@ -2,8 +2,8 @@
 
 ## Current state
 - Working on: proposed task-writer extension in `coldlight-labs/priority-matrix`, branch `13-agent-writer-status-label-management`.
-- Status: task-writer label creation and checked label updates are implemented locally; task status changes already use the checked task-update route. No key was generated, no data changed, and no deployment occurred.
-- Next step: run the project checks, commit and push this API branch, then open a PR for issue #13. The paired Hermes changes are already on their feature branch; the user merges both PRs and runs deployment commands.
+- Status: API changes are committed and pushed as `d7c65a2`; issue #13 is open. Full checks passed, including 628 tests and the private-word scan. No key was generated, no data changed, and no deployment occurred.
+- Next step: open the PR for issue #13. GitHub's connected integration returned 403, and the signed-in Mac locked before the browser fallback reached the PR form. The user can open it from the branch comparison link or unlock the Mac for another attempt. The user merges both PRs and runs deployment commands.
 - Architecture impact: local API authorization change; extends the existing task-writer without adding a role or service. ADR 0007 documents the trust boundary.
 - Last labels used: none
 
@@ -11,7 +11,7 @@
 - Started: extend one task-writer key per profile to cover task status and label management.
 - Implemented: task-writer label creation and checked label updates for rename, recolor, archive, and restore. Existing create-only label-writer keys remain compatible.
 - Safety: checked label changes compare the full loaded label, preserve storage-owned metadata, and reject duplicate active names. No reads, unrestricted upserts, account administration, or permanent deletion were added.
-- Opened public issue #13 after the GitHub integration denied issue creation; used the signed-in browser for the authorized issue creation. No keys, tasks, labels, or deployed service were changed.
+- Opened public issue #13 through the signed-in browser after the GitHub integration denied issue creation. Committed and pushed the API implementation after all checks passed. Pull-request creation remains blocked by the integration's 403 and the Mac lock. No keys, tasks, labels, or deployed service were changed.
 
 ## Log
 ### 2026-10-29
