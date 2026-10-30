@@ -29,9 +29,16 @@ services:
       SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in deploy/.env}
       # The main domain and its www, sent to the app for now (temporary redirect).
       MAIN_ADDRESS: ${MAIN_ADDRESS:?set MAIN_ADDRESS in deploy/.env}
+      # A second app sharing this front door, and where it answers (ADR 0008).
+      EXTRA_SITE_ADDRESS: ${EXTRA_SITE_ADDRESS:?set EXTRA_SITE_ADDRESS in deploy/.env}
+      EXTRA_SITE_UPSTREAM: ${EXTRA_SITE_UPSTREAM:?set EXTRA_SITE_UPSTREAM in deploy/.env}
     volumes:
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      - default
+      # Shared with the second app (ADR 0008); create it once: docker network create edge
+      - edge
     depends_on:
       - server
     <<: *logs
@@ -57,6 +64,10 @@ services:
     security_opt:
       - no-new-privileges:true
     <<: *logs
+
+networks:
+  edge:
+    external: true
 
 volumes:
   # Tasks and accounts. Kept across updates; backed up in step 5.
