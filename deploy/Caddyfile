@@ -36,3 +36,27 @@
 {$MAIN_ADDRESS}, www.{$MAIN_ADDRESS} {
 	redir https://{$SITE_ADDRESS}{uri} 302
 }
+
+# A second app of the owner's on this VPS, sharing this front door (ADR 0008). It runs
+# in its own Docker Compose project and joins the "edge" network; EXTRA_SITE_ADDRESS
+# and EXTRA_SITE_UPSTREAM come from deploy/.env. This app's own data never passes here.
+{$EXTRA_SITE_ADDRESS} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		# A Next.js app: its pages carry small inline scripts and styles, and it hosts
+		# its own fonts. Downloads are made in the page (blob:).
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	request_body {
+		max_size 2MB
+	}
+	reverse_proxy {$EXTRA_SITE_UPSTREAM}
+}

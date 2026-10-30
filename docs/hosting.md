@@ -207,6 +207,14 @@ The first deploy served the app on the main domain. To move it:
 3. Open your link with `matrix.` added in front of the domain; the key after `#key=` stays the same. An old link still works for now: the main domain sends it on.
 4. On each device that opened the old address, clear the website data for `example.com`, so the key no longer sits in the main domain's storage where a future site there could read it. Browsers list the domain and its subdomains together, so this also clears `matrix.`: open your new link again afterwards. Safari on iPhone: Settings, Apps, Safari, Advanced, Website Data, search for your domain, swipe to delete. Chrome on a computer: go to `chrome://settings/content/all`, search for your domain, delete its data.
 
+## A second app on the same front door (ADR 0008, once)
+This Caddy also serves a second app on the VPS. Before the next `update.sh`:
+1. Create the shared network: `sudo docker network create edge`
+2. Add the second app's address and upstream to `deploy/.env` (see `deploy/.env.example`): `nano /opt/priority-matrix/deploy/.env`
+3. Point its DNS name at the VPS (an `A` record), then run `/opt/priority-matrix/deploy/update.sh` and expect the usual check lines.
+
+Until the second app is running, its address answers 502; this app is unaffected.
+
 ## Updating and rolling back
 - Update to the latest `main`: `/opt/priority-matrix/deploy/update.sh`
 - Roll back to an earlier version: `/opt/priority-matrix/deploy/update.sh <commit>` (find commits with `git -C /opt/priority-matrix log --oneline`). Data is never touched by either.
