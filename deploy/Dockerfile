@@ -3,14 +3,14 @@
 #   web:    Caddy with the site files (dist-site/) and deploy/Caddyfile
 # Base images are pinned to exact versions; update them on purpose, in a pull request.
 
-FROM node:24.22.1-bookworm-slim AS build
+FROM node:24.22.2-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build:site && npm run build:server
 
-FROM node:24.22.1-alpine3.24 AS server
+FROM node:24.22.2-alpine3.24 AS server
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app/dist-server ./
